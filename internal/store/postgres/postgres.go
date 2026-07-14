@@ -7,6 +7,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -57,3 +58,12 @@ func (db *DB) Ping(ctx context.Context) error {
 
 // Close releases every pooled connection.
 func (db *DB) Close() { db.Pool.Close() }
+
+// encodeJSON marshals a value for a jsonb column.
+func encodeJSON(v any) ([]byte, error) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("encode json: %w", err)
+	}
+	return body, nil
+}

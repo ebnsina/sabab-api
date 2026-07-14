@@ -7,12 +7,16 @@ package clickhouse
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/ebnsina/sabab-api/internal/config"
 )
+
+// ErrNotFound is returned when a query matches no row.
+var ErrNotFound = errors.New("not found")
 
 // DB wraps a ClickHouse native-protocol connection pool.
 type DB struct {

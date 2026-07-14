@@ -5,20 +5,17 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ebnsina/sabab-api/internal/auth"
 	"github.com/jackc/pgx/v5"
 )
 
 // ErrNotFound is returned when a lookup matches no row.
 var ErrNotFound = errors.New("not found")
 
-// Project is a project as the ingest path needs to know it.
-type Project struct {
-	ID       uint64
-	OrgID    uint64
-	Slug     string
-	Name     string
-	Platform string
-}
+// Project is auth.Project. The type is declared in internal/auth so that auth
+// depends on nothing and the store depends on auth — the only arrangement in
+// which the two do not import each other.
+type Project = auth.Project
 
 // ProjectByIngestKey resolves a public ingest key to its project.
 //
@@ -36,7 +33,10 @@ func (db *DB) ProjectByIngestKey(ctx context.Context, publicKey string) (Project
 	err := db.QueryRow(ctx, query, publicKey).Scan(&p.ID, &p.OrgID, &p.Slug, &p.Name, &p.Platform)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Project{}, ErrNotFound
+			// auth distinguishes "no such key" (401) from "the database is
+			// down" (503). Returning a generic not-found here would collapse
+			// that distinction and make an outage look like a bad key.
+			return Project{}, auth.ErrProjectNotFound
 		}
 		return Project{}, fmt.Errorf("lookup ingest key: %w", err)
 	}
@@ -78,4 +78,32 @@ func (db *DB) CreateIngestKey(ctx context.Context, projectID uint64, publicKey, 
 		return fmt.Errorf("create ingest key: %w", err)
 	}
 	return nil
+}
+
+// ProjectsForUser lists the projects a user can see, through their org
+// memberships. It is the list the dashboard's project switcher shows, and it is
+// scoped by membership rather than filtered client-side for the obvious reason.
+func (db *DB) ProjectsForUser(ctx context.Context, userID uint64) ([]Project, error) {
+	const query = `
+		SELECT p.id, p.org_id, p.slug, p.name, p.platform
+		FROM projects p
+		JOIN org_members m ON m.org_id = p.org_id
+		WHERE m.user_id = $1
+		ORDER BY p.name`
+
+	rows, err := db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list projects: %w", err)
+	}
+	defer rows.Close()
+
+	projects := make([]Project, 0)
+	for rows.Next() {
+		var p Project
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.Slug, &p.Name, &p.Platform); err != nil {
+			return nil, fmt.Errorf("scan project: %w", err)
+		}
+		projects = append(projects, p)
+	}
+	return projects, rows.Err()
 }

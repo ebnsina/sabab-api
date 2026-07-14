@@ -34,7 +34,10 @@ func (f *fakeProjects) ProjectByIngestKey(_ context.Context, publicKey string) (
 	}
 	p, ok := f.keys[publicKey]
 	if !ok {
-		return postgres.Project{}, postgres.ErrNotFound
+		// auth.ErrProjectNotFound, not a generic not-found: the two produce
+		// different status codes (401 vs 503), and an unknown key answered with
+		// 503 would make the SDK retry a request that can never succeed.
+		return postgres.Project{}, auth.ErrProjectNotFound
 	}
 	return p, nil
 }

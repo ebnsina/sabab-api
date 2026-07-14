@@ -64,17 +64,53 @@ func run(ctx context.Context, orgSlug, projectSlug, platform string) error {
 		return err
 	}
 
+	// A login, or the dashboard we just seeded data into cannot be opened.
+	user, created, err := upsertUser(ctx, db, orgID, seedEmail, seedPassword)
+	if err != nil {
+		return err
+	}
+
 	log.Info("seeded",
 		slog.String("org", orgSlug),
 		slog.String("project", projectSlug),
 		slog.Uint64("project_id", project.ID),
+		slog.Bool("user_created", created),
 	)
 
 	// The whole SDK configuration, in one string — see docs/wire-format.md.
 	fmt.Printf("\n  Ingest key: %s\n", key)
 	fmt.Printf("  Project ID: %d\n", project.ID)
-	fmt.Printf("  Ingest URL: http://%s@localhost:8080/%d\n\n", key, project.ID)
+	fmt.Printf("  Ingest URL: http://%s@localhost:8090/%d\n", key, project.ID)
+	fmt.Printf("\n  Dashboard login: %s / %s\n\n", user.Email, seedPassword)
 	return nil
+}
+
+// The development login. Obviously not a secret — it exists so that a fresh
+// `make dev` gives you something you can actually log into.
+const (
+	seedEmail    = "dev@sabab.local"
+	seedPassword = "sabab-dev-password"
+)
+
+// upsertUser creates the dev user and makes them an owner of the org.
+func upsertUser(ctx context.Context, db *postgres.DB, orgID uint64, email, password string) (auth.User, bool, error) {
+	user, _, err := db.UserByEmail(ctx, email)
+	if err == nil {
+		return user, false, db.AddMember(ctx, orgID, user.ID, "owner")
+	}
+	if !errors.Is(err, postgres.ErrNotFound) {
+		return auth.User{}, false, err
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return auth.User{}, false, err
+	}
+	user, err = db.CreateUser(ctx, email, hash, "Dev")
+	if err != nil {
+		return auth.User{}, false, err
+	}
+	return user, true, db.AddMember(ctx, orgID, user.ID, "owner")
 }
 
 func upsertOrg(ctx context.Context, db *postgres.DB, slug string) (uint64, error) {
