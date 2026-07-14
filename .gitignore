@@ -21,6 +21,10 @@ node_modules/
 dist/
 .svelte-kit/
 
+# Agent skills are committed on purpose (.agents/, .claude/skills, skills-lock.json)
+# so everyone reviews the same ClickHouse rules. Personal settings are not.
+.claude/settings.local.json
+
 # Editors / OS
 .DS_Store
 .idea/
