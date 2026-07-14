@@ -1,0 +1,20 @@
+{
+  "name": "@sabab/browser",
+  "version": "1.0.0",
+  "description": "Sabab SDK for the browser: uncaught errors, unhandled rejections, breadcrumbs",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": { "@sabab/core": "workspace:*" },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2"
+  }
+}

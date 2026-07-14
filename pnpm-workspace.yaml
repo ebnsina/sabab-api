@@ -7,3 +7,8 @@ packages:
   - "web"
   # Runnable apps we test against — the demo app is the M1 acceptance test.
   - "examples/*"
+# esbuild ships a platform-specific binary and needs its postinstall to run.
+# It is a build-time dependency of the SDKs only; nothing it does reaches
+# production or a customer's bundle.
+allowBuilds:
+  esbuild: true

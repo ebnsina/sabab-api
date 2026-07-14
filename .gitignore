@@ -29,3 +29,6 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+
+# Built SDK output
+sdk/js/*/dist/
