@@ -7,9 +7,11 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ebnsina/sabab-api/internal/config"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -40,6 +42,10 @@ func Connect(ctx context.Context, cfg config.Postgres) (*DB, error) {
 	}
 	return &DB{Pool: pool}, nil
 }
+
+// isNoRows reports whether err is "the query matched nothing", which for many
+// of our lookups is an expected outcome rather than a failure.
+func isNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
 
 // Ping satisfies health.Check.
 func (db *DB) Ping(ctx context.Context) error {
