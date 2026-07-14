@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["src/routes/cart.ts"],
+  "sourcesContent": ["interface Item { id: string }\n\nexport function renderCart(items: Item[] | undefined): string {\n  const first = items![0];\n  return first.id;\n}\n\nexport function checkout(): void {\n  renderCart(undefined);\n}\n"],
+  "mappings": "MAEO,SAASA,EAAWC,EAAmC,CAE5D,OADcA,EAAO,CAAC,EACT,EACf,CAEO,SAASC,GAAiB,CAC/BF,EAAW,MAAS,CACtB",
+  "names": ["renderCart", "items", "checkout"]
+}

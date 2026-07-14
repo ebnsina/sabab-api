@@ -19,7 +19,9 @@ import (
 	"github.com/ebnsina/sabab-api/internal/queue"
 	"github.com/ebnsina/sabab-api/internal/scrub"
 	"github.com/ebnsina/sabab-api/internal/store/clickhouse"
+	"github.com/ebnsina/sabab-api/internal/store/objects"
 	"github.com/ebnsina/sabab-api/internal/store/postgres"
+	"github.com/ebnsina/sabab-api/internal/symbolicate"
 	"github.com/ebnsina/sabab-api/internal/version"
 )
 
@@ -63,9 +65,15 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	// Symbolication lands in M1b. Until then the pipeline runs without it and
-	// stacks stay minified — which is honest, and better than blocking ingest.
-	pipeline := processor.NewPipeline(scrub.Default(), nil, pg)
+	artifacts, err := objects.Connect(ctx, cfg.S3)
+	if err != nil {
+		return err
+	}
+
+	// Symbolication is best-effort inside the pipeline: a missing map costs us a
+	// readable stack, never the event.
+	symbolicator := symbolicate.New(pg, artifacts, log)
+	pipeline := processor.NewPipeline(scrub.Default(), symbolicator, pg)
 
 	opts := processor.DefaultOptions()
 	opts.BatchSize = cfg.Processor.BatchSize
@@ -76,6 +84,7 @@ func run(ctx context.Context) error {
 	checker.Register("postgres", pg.Ping)
 	checker.Register("clickhouse", ch.Ping)
 	checker.Register("redis", q.Ping)
+	checker.Register("objects", artifacts.Ping)
 	go serveHealth(ctx, checker, log)
 
 	log.Info("draining queue",
