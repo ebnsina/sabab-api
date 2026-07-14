@@ -1,0 +1,27 @@
+# Internal planning docs — local reference only, never published
+/docs/plan.md
+
+# Local state / volumes
+/data/
+/tmp/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Go
+/bin/
+*.test
+*.out
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+.svelte-kit/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/

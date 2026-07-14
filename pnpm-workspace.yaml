@@ -1,0 +1,9 @@
+packages:
+  # The SDKs. @sabab/core is the shared base; browser and node build on it.
+  # These are not a nice-to-have: our wire format is our own, so an SDK is the
+  # only way data can reach us. They ship with M1.
+  - "sdk/js/*"
+  # The SvelteKit dashboard.
+  - "web"
+  # Runnable apps we test against — the demo app is the M1 acceptance test.
+  - "examples/*"

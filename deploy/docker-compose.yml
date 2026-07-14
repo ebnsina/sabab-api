@@ -1,0 +1,130 @@
+# The whole stack, one command — for local development and for self-hosting.
+#
+# M0 brings up the four backing services. The Go services (gateway, processor,
+# api) and the SvelteKit dashboard join this file in M1, once there is something
+# for them to do.
+#
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# Every service declares a healthcheck, and dependents wait on it. Without that,
+# `make migrate` races ClickHouse's startup and fails on a cold machine — which
+# would make the very first thing a new contributor runs look broken.
+
+name: sabab
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sabab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sabab}
+      POSTGRES_DB: ${POSTGRES_DB:-sabab}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Postgres 18+ wants the mount at /var/lib/postgresql, not .../data: it
+      # keeps the cluster in a major-version subdirectory so pg_upgrade --link
+      # can work across a mount boundary. Mounting .../data directly makes the
+      # image refuse to initialise.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sabab} -d ${POSTGRES_DB:-sabab}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8-alpine
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-sabab}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-sabab}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-sabab}
+      # Without this the bundled `default` user stays passwordless and can read
+      # every table — fine on a laptop, a hole in a self-hosted deploy.
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000" # native protocol — what our Go services use
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"   # HTTP — clickhouse-client, debugging
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+    ulimits:
+      # ClickHouse opens a lot of files; the Docker default of 1024 makes it
+      # fall over under any real merge load.
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    # appendonly keeps the ingest queue across a restart. Losing the queue means
+    # losing events customers already believe we accepted.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-sabab}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-sabab-secret}
+    ports:
+      # 9002, not the usual 9000: ClickHouse's native protocol already has that.
+      - "${S3_PORT:-9002}:9000"
+      - "${S3_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Creates the artifact bucket and exits. Source-map upload (M1) needs the
+  # bucket to exist, and nobody should have to click through a web console for
+  # a local dev stack to work.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      S3_BUCKET: ${S3_BUCKET:-sabab-artifacts}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-sabab}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-sabab-secret}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mc alias set local http://minio:9000 "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}"
+        mc mb --ignore-existing "local/$${S3_BUCKET}"
+        echo "bucket $${S3_BUCKET} ready"
+    restart: "no"
+
+volumes:
+  postgres-data:
+  clickhouse-data:
+  clickhouse-logs:
+  redis-data:
+  minio-data:

@@ -1,0 +1,16 @@
+{
+  "name": "sabab",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Sabab — application observability: errors, logs, traces and metrics in one place",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
