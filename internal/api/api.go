@@ -75,6 +75,9 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/metrics", a.authenticated(a.handleListMetrics))
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/metrics/query", a.authenticated(a.handleQueryMetric))
 
+	// Web Vitals (RUM) — p75 of the browser vitals, over the metric rollups.
+	mux.HandleFunc("GET /api/v1/projects/{project_id}/vitals", a.authenticated(a.handleWebVitals))
+
 	// Performance (APM) — aggregation over spans.
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/performance/transactions", a.authenticated(a.handleTransactions))
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/performance/transactions/samples", a.authenticated(a.handleTransactionSamples))
