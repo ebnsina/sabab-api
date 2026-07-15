@@ -53,6 +53,27 @@ type IssueCursor struct {
 }
 
 // ListIssues returns a page of the issue stream.
+// CountIssues counts the issues matching a filter's status and group set,
+// ignoring the cursor and limit — the "of N" a paginator shows. It mirrors the
+// non-keyset part of ListIssues' WHERE exactly, so the total agrees with what
+// paging through actually yields.
+func (db *DB) CountIssues(ctx context.Context, f IssueFilter) (uint64, error) {
+	var hashes any
+	if f.GroupHashes != nil {
+		hashes = f.GroupHashes
+	}
+	const q = `
+		SELECT count(*) FROM issues
+		WHERE project_id = $1 AND ($2 = '' OR status = $2)
+		  AND ($3::text[] IS NULL OR group_hash = ANY($3))`
+
+	var n uint64
+	if err := db.QueryRow(ctx, q, f.ProjectID, f.Status, hashes).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count issues: %w", err)
+	}
+	return n, nil
+}
+
 func (db *DB) ListIssues(ctx context.Context, f IssueFilter) (issues []Issue, hasMore bool, err error) {
 	// The sort column is chosen from a fixed set, never taken from user input:
 	// it cannot be a bound parameter, so an allowlist is the only safe way. The

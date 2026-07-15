@@ -64,7 +64,7 @@ func transactionSort(key string) (string, bool) {
 // Transactions lists endpoints with their latency, throughput, failure rate and
 // Apdex over the window. apdexT is the Apdex threshold T (satisfied at <= T,
 // tolerating up to 4T).
-func (db *DB) Transactions(ctx context.Context, projectID uint64, from, to time.Time, apdexT time.Duration, sortBy string, limit int) ([]TransactionSummary, error) {
+func (db *DB) Transactions(ctx context.Context, projectID uint64, from, to time.Time, apdexT time.Duration, sortBy, environment string, limit int) ([]TransactionSummary, error) {
 	orderExpr, ok := transactionSort(sortBy)
 	if !ok {
 		return nil, fmt.Errorf("unknown sort %q", sortBy)
@@ -93,14 +93,14 @@ func (db *DB) Transactions(ctx context.Context, projectID uint64, from, to time.
 			countIf(duration_ns > ? AND duration_ns <= ?) AS tolerating,
 			(satisfied + tolerating / 2) / c AS apdexScore
 		FROM spans
-		WHERE project_id = ? AND is_segment AND timestamp >= ? AND timestamp < ?
+		WHERE project_id = ? AND (? = '' OR environment = ?) AND is_segment AND timestamp >= ? AND timestamp < ?
 		GROUP BY name
 		ORDER BY %s %s
 		LIMIT ?`, orderExpr, dir)
 
 	rows, err := db.Query(ctx, q,
 		tNS, tNS, 4*tNS, // apdex thresholds, in SELECT order
-		projectID, from, to,
+		projectID, environment, environment, from, to,
 		min(max(limit, 1), 200),
 	)
 	if err != nil {
@@ -145,16 +145,16 @@ type TransactionSample struct {
 
 // TransactionSamples returns the slowest traces for one endpoint — the ones
 // worth opening in the waterfall to see where the time went.
-func (db *DB) TransactionSamples(ctx context.Context, projectID uint64, name string, from, to time.Time, limit int) ([]TransactionSample, error) {
+func (db *DB) TransactionSamples(ctx context.Context, projectID uint64, name string, from, to time.Time, environment string, limit int) ([]TransactionSample, error) {
 	const q = `
 		SELECT trace_id, timestamp, duration_ns, status, http_status
 		FROM spans
-		WHERE project_id = ? AND is_segment AND name = ?
+		WHERE project_id = ? AND (? = '' OR environment = ?) AND is_segment AND name = ?
 		  AND timestamp >= ? AND timestamp < ?
 		ORDER BY duration_ns DESC
 		LIMIT ?`
 
-	rows, err := db.Query(ctx, q, projectID, name, from, to, min(max(limit, 1), 50))
+	rows, err := db.Query(ctx, q, projectID, environment, environment, name, from, to, min(max(limit, 1), 50))
 	if err != nil {
 		return nil, fmt.Errorf("query transaction samples: %w", err)
 	}
@@ -186,7 +186,7 @@ type SlowQuery struct {
 // SlowQueries ranks database statements by the total time spent in them. It
 // groups by the statement text, which the SDK sends parameterised ("SELECT ...
 // WHERE id = $1"), so the same query shape aggregates into one row.
-func (db *DB) SlowQueries(ctx context.Context, projectID uint64, from, to time.Time, limit int) ([]SlowQuery, error) {
+func (db *DB) SlowQueries(ctx context.Context, projectID uint64, from, to time.Time, environment string, limit int) ([]SlowQuery, error) {
 	const q = `
 		SELECT
 			db_statement, any(db_system) AS db_system,
@@ -195,13 +195,13 @@ func (db *DB) SlowQueries(ctx context.Context, projectID uint64, from, to time.T
 			avg(duration_ns) AS mean,
 			toFloat64(sum(duration_ns)) AS total
 		FROM spans
-		WHERE project_id = ? AND op = 'db.query' AND db_statement != ''
+		WHERE project_id = ? AND (? = '' OR environment = ?) AND op = 'db.query' AND db_statement != ''
 		  AND timestamp >= ? AND timestamp < ?
 		GROUP BY db_statement
 		ORDER BY total DESC
 		LIMIT ?`
 
-	rows, err := db.Query(ctx, q, projectID, from, to, min(max(limit, 1), 100))
+	rows, err := db.Query(ctx, q, projectID, environment, environment, from, to, min(max(limit, 1), 100))
 	if err != nil {
 		return nil, fmt.Errorf("query slow queries: %w", err)
 	}
@@ -242,7 +242,7 @@ type NPlusOne struct {
 // with at least `threshold` child db.query spans running the identical
 // statement. That fan-out is the signature of an N+1, and it is invisible in a
 // per-query average — each query is fast; it is the count that hurts.
-func (db *DB) NPlusOneQueries(ctx context.Context, projectID uint64, from, to time.Time, threshold, limit int) ([]NPlusOne, error) {
+func (db *DB) NPlusOneQueries(ctx context.Context, projectID uint64, from, to time.Time, environment string, threshold, limit int) ([]NPlusOne, error) {
 	if threshold < 2 {
 		threshold = 2
 	}
@@ -260,7 +260,7 @@ func (db *DB) NPlusOneQueries(ctx context.Context, projectID uint64, from, to ti
 			SELECT trace_id, parent_span_id, db_statement,
 			       any(db_system) AS db_system, count() AS repeats
 			FROM spans
-			WHERE project_id = ? AND op = 'db.query' AND db_statement != '' AND parent_span_id != 0
+			WHERE project_id = ? AND (? = '' OR environment = ?) AND op = 'db.query' AND db_statement != '' AND parent_span_id != 0
 			  AND timestamp >= ? AND timestamp < ?
 			GROUP BY trace_id, parent_span_id, db_statement
 			HAVING repeats >= ?
@@ -269,7 +269,7 @@ func (db *DB) NPlusOneQueries(ctx context.Context, projectID uint64, from, to ti
 		ORDER BY max_repeats DESC, occurrences DESC
 		LIMIT ?`
 
-	rows, err := db.Query(ctx, q, projectID, from, to, threshold, min(max(limit, 1), 50))
+	rows, err := db.Query(ctx, q, projectID, environment, environment, from, to, threshold, min(max(limit, 1), 50))
 	if err != nil {
 		return nil, fmt.Errorf("query n+1: %w", err)
 	}
@@ -321,16 +321,16 @@ const (
 // the release with the most recent traffic (max timestamp): after a deploy the
 // old release stops receiving requests while the new one keeps serving, so the
 // most-recently-active release is the one live now — no deploy feed needed.
-func (db *DB) CompareReleases(ctx context.Context, projectID uint64, from, to time.Time, limit int) (ReleaseComparison, error) {
+func (db *DB) CompareReleases(ctx context.Context, projectID uint64, from, to time.Time, environment string, limit int) (ReleaseComparison, error) {
 	// The two most recently active releases in the window.
 	const relQ = `
 		SELECT release
 		FROM spans
-		WHERE project_id = ? AND is_segment AND release != '' AND timestamp >= ? AND timestamp < ?
+		WHERE project_id = ? AND (? = '' OR environment = ?) AND is_segment AND release != '' AND timestamp >= ? AND timestamp < ?
 		GROUP BY release
 		ORDER BY max(timestamp) DESC
 		LIMIT 2`
-	rows, err := db.Query(ctx, relQ, projectID, from, to)
+	rows, err := db.Query(ctx, relQ, projectID, environment, environment, from, to)
 	if err != nil {
 		return ReleaseComparison{}, fmt.Errorf("list releases: %w", err)
 	}
@@ -360,10 +360,10 @@ func (db *DB) CompareReleases(ctx context.Context, projectID uint64, from, to ti
 			countIf(status = 'error') / count() AS fail,
 			count() AS n
 		FROM spans
-		WHERE project_id = ? AND is_segment AND release IN (?, ?)
+		WHERE project_id = ? AND (? = '' OR environment = ?) AND is_segment AND release IN (?, ?)
 		  AND timestamp >= ? AND timestamp < ?
 		GROUP BY name, release`
-	rows, err = db.Query(ctx, q, projectID, current, previous, from, to)
+	rows, err = db.Query(ctx, q, projectID, environment, environment, current, previous, from, to)
 	if err != nil {
 		return ReleaseComparison{}, fmt.Errorf("compare releases: %w", err)
 	}

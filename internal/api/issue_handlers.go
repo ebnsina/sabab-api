@@ -70,8 +70,11 @@ func (a *API) handleListIssues(w http.ResponseWriter, r *http.Request, user auth
 
 	// The search DSL runs against ClickHouse, because the fields people search on
 	// — browser, tag, user — only exist on events. The matching groups then filter
-	// the Postgres issue list.
-	if search := r.URL.Query().Get("q"); search != "" {
+	// the Postgres issue list. An environment filter narrows the same way (events
+	// carry the environment, the issue row does not), so it runs through this path
+	// too — even with no search text.
+	search := r.URL.Query().Get("q")
+	if search != "" || requestEnvironment(r) != "" {
 		hashes, err := a.searchGroups(r, projectID, search, from, to)
 		if err != nil {
 			httpx.WriteError(w, r, a.log, err)
@@ -100,7 +103,11 @@ func (a *API) handleListIssues(w http.ResponseWriter, r *http.Request, user auth
 		v, _ := json.Marshal(issueSortValue(sort, last))
 		next, _ = cursor.Encode(issueCursor{V: v, ID: last.ID})
 	}
-	httpx.WriteJSON(w, http.StatusOK, paginated("issues", out, next))
+	resp := paginated("issues", out, next)
+	if total, cerr := a.pg.CountIssues(ctx, filter); cerr == nil {
+		resp["total"] = total
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 // issueCursor is the wire form of the issue keyset cursor: the sort value as raw
@@ -158,6 +165,7 @@ func (a *API) searchGroups(r *http.Request, projectID uint64, search string, fro
 	if err != nil {
 		return nil, httpx.NewError(http.StatusBadRequest, "bad_query", err.Error())
 	}
+	sql = applyEnvironment(r, sql)
 
 	hashes, err := a.ch.MatchingGroups(r.Context(), sql, 1000)
 	if err != nil {
@@ -360,6 +368,7 @@ func (a *API) handleSearchEvents(w http.ResponseWriter, r *http.Request, user au
 		httpx.WriteError(w, r, a.log, httpx.NewError(http.StatusBadRequest, "bad_query", err.Error()))
 		return
 	}
+	sql = applyEnvironment(r, sql)
 
 	var cur timeUUIDCursor
 	if err := decodeCursor(r, &cur); err != nil {
@@ -382,7 +391,11 @@ func (a *API) handleSearchEvents(w http.ResponseWriter, r *http.Request, user au
 		last := events[len(events)-1]
 		next, _ = cursor.Encode(timeUUIDCursor{T: last.Timestamp, ID: last.EventID})
 	}
-	httpx.WriteJSON(w, http.StatusOK, paginated("events", events, next))
+	resp := paginated("events", events, next)
+	if total, cerr := a.ch.CountEvents(ctx, sql); cerr == nil {
+		resp["total"] = total
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (a *API) handleListProjects(w http.ResponseWriter, r *http.Request, user auth.User) {

@@ -72,6 +72,7 @@ func (a *API) handleSearchSpans(w http.ResponseWriter, r *http.Request, user aut
 		httpx.WriteError(w, r, a.log, httpx.NewError(http.StatusBadRequest, "bad_query", err.Error()))
 		return
 	}
+	sql = applyEnvironment(r, sql)
 
 	var cur timeUUIDCursor
 	if err := decodeCursor(r, &cur); err != nil {
@@ -96,5 +97,9 @@ func (a *API) handleSearchSpans(w http.ResponseWriter, r *http.Request, user aut
 		last := spans[len(spans)-1]
 		next, _ = cursor.Encode(timeUUIDCursor{T: last.Timestamp, ID: last.TraceID})
 	}
-	httpx.WriteJSON(w, http.StatusOK, paginated("traces", spans, next))
+	resp := paginated("traces", spans, next)
+	if total, cerr := a.ch.CountSegments(ctx, sql); cerr == nil {
+		resp["total"] = total
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }

@@ -35,7 +35,7 @@ func (a *API) handleTransactions(w http.ResponseWriter, r *http.Request, user au
 		}
 	}
 
-	txns, err := a.ch.Transactions(ctx, projectID, from, to, apdexT, r.URL.Query().Get("sort"), 200)
+	txns, err := a.ch.Transactions(ctx, projectID, from, to, apdexT, r.URL.Query().Get("sort"), requestEnvironment(r), 200)
 	if err != nil {
 		httpx.WriteError(w, r, a.log, httpx.NewError(http.StatusBadRequest, "bad_query", err.Error()))
 		return
@@ -66,7 +66,7 @@ func (a *API) handleTransactionSamples(w http.ResponseWriter, r *http.Request, u
 	}
 
 	from, to := timeRange(r)
-	samples, err := a.ch.TransactionSamples(ctx, projectID, name, from, to, 20)
+	samples, err := a.ch.TransactionSamples(ctx, projectID, name, from, to, requestEnvironment(r), 20)
 	if err != nil {
 		httpx.WriteError(w, r, a.log, err)
 		return
@@ -88,7 +88,7 @@ func (a *API) handleSlowQueries(w http.ResponseWriter, r *http.Request, user aut
 	}
 
 	from, to := timeRange(r)
-	queries, err := a.ch.SlowQueries(ctx, projectID, from, to, 50)
+	queries, err := a.ch.SlowQueries(ctx, projectID, from, to, requestEnvironment(r), 50)
 	if err != nil {
 		httpx.WriteError(w, r, a.log, err)
 		return
@@ -114,7 +114,7 @@ func (a *API) handleNPlusOne(w http.ResponseWriter, r *http.Request, user auth.U
 	}
 
 	from, to := timeRange(r)
-	patterns, err := a.ch.NPlusOneQueries(ctx, projectID, from, to, nPlusOneThreshold, 50)
+	patterns, err := a.ch.NPlusOneQueries(ctx, projectID, from, to, requestEnvironment(r), nPlusOneThreshold, 50)
 	if err != nil {
 		httpx.WriteError(w, r, a.log, err)
 		return
@@ -136,7 +136,7 @@ func (a *API) handleReleaseComparison(w http.ResponseWriter, r *http.Request, us
 	}
 
 	from, to := timeRange(r)
-	cmp, err := a.ch.CompareReleases(ctx, projectID, from, to, 50)
+	cmp, err := a.ch.CompareReleases(ctx, projectID, from, to, requestEnvironment(r), 50)
 	if err != nil {
 		httpx.WriteError(w, r, a.log, err)
 		return

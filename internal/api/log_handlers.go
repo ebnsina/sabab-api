@@ -56,7 +56,11 @@ func (a *API) handleSearchLogs(w http.ResponseWriter, r *http.Request, user auth
 	if hasMore && len(logs) > 0 {
 		next, _ = cursor.Encode(timeCursor{T: logs[len(logs)-1].Timestamp})
 	}
-	httpx.WriteJSON(w, http.StatusOK, paginated("logs", logs, next))
+	resp := paginated("logs", logs, next)
+	if total, cerr := a.ch.CountLogs(ctx, sql); cerr == nil {
+		resp["total"] = total
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 // handleTraceLogs returns the logs emitted inside a trace — the jump from an
@@ -191,7 +195,7 @@ func (a *API) compileLogQuery(r *http.Request, projectID uint64, from, to time.T
 	if err != nil {
 		return query.SQL{}, httpx.NewError(http.StatusBadRequest, "bad_query", err.Error())
 	}
-	return sql, nil
+	return applyEnvironment(r, sql), nil
 }
 
 // writeSSE emits one log entry as a JSON `data:` event.
