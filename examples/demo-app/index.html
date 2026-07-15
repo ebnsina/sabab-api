@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Sabab demo shop</title>
+		<style>
+			:root {
+				color-scheme: dark;
+				font-family: ui-sans-serif, system-ui, sans-serif;
+			}
+			body {
+				margin: 0;
+				min-height: 100vh;
+				display: grid;
+				place-items: center;
+				background: #090a0d;
+				color: #e7eaf0;
+			}
+			main {
+				width: 100%;
+				max-width: 30rem;
+				padding: 2rem;
+			}
+			h1 {
+				font-size: 1.4rem;
+				margin: 0 0 0.25rem;
+			}
+			p.sub {
+				margin: 0 0 1.5rem;
+				color: #99a2b0;
+				font-size: 0.9rem;
+			}
+			.grid {
+				display: grid;
+				gap: 0.6rem;
+			}
+			button {
+				appearance: none;
+				border: 1px solid rgba(255, 255, 255, 0.08);
+				background: #131519;
+				color: #e7eaf0;
+				padding: 0.7rem 1rem;
+				border-radius: 0.75rem;
+				font-size: 0.9rem;
+				font-weight: 500;
+				text-align: left;
+				cursor: pointer;
+				transition: background 0.12s;
+			}
+			button:hover {
+				background: #1b1e24;
+			}
+			button b {
+				color: #8b7cff;
+			}
+			#log {
+				margin-top: 1.25rem;
+				font-family: ui-monospace, monospace;
+				font-size: 0.78rem;
+				color: #7c8593;
+				white-space: pre-wrap;
+				line-height: 1.5;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1>Sabab demo shop</h1>
+			<p class="sub">
+				Every button sends real telemetry through <b>@sabab/browser</b> to your local stack.
+				Web Vitals are collected automatically and sent when you leave the tab.
+			</p>
+			<div class="grid">
+				<button id="handled"><b>Handled error</b> — captureException on a caught throw</button>
+				<button id="uncaught"><b>Uncaught error</b> — let it hit window.onerror</button>
+				<button id="logs"><b>Logs</b> — info, warn and error with attributes</button>
+				<button id="metrics"><b>Metrics</b> — a counter, a distribution and a timing</button>
+				<button id="vitals"><b>Send Web Vitals now</b> — simulate leaving the tab</button>
+			</div>
+			<div id="log">initialising…</div>
+		</main>
+		<script type="module" src="/src/main.ts"></script>
+	</body>
+</html>

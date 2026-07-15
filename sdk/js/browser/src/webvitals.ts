@@ -68,9 +68,9 @@ export function installWebVitals(c: Client): void {
 	};
 
 	// These metrics stop changing when the page is backgrounded — that is when to
-	// send them. Both events are used because no single one fires reliably across
-	// every browser and platform.
-	addEventListener("visibilitychange", () => {
+	// send them. visibilitychange fires on `document`; pagehide on `window`. Both
+	// are used because no single one fires reliably across every browser.
+	document.addEventListener("visibilitychange", () => {
 		if (document.visibilityState === "hidden") report();
 	});
 	addEventListener("pagehide", report);

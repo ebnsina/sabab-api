@@ -25,10 +25,13 @@ function setup() {
 		getEntriesByType: (t: string) => (t === "navigation" ? [{ responseStart: 120 }] : []),
 	};
 	g.location = { pathname: "/checkout" };
-	g.document = { visibilityState: "visible" };
-	g.addEventListener = (ev: string, cb: () => void) => {
+	// visibilitychange listeners register on document; pagehide on window. Both
+	// funnel into the same map so a single fire() drives either.
+	const register = (ev: string, cb: () => void) => {
 		(listeners[ev] ||= []).push(cb);
 	};
+	g.document = { visibilityState: "visible", addEventListener: register };
+	g.addEventListener = register;
 
 	const client = {
 		metrics: {

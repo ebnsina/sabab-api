@@ -1,0 +1,17 @@
+{
+  "name": "@sabab/demo-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "A tiny shop that sends real telemetry through the browser SDK — the end-to-end acceptance test.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@sabab/browser": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}
