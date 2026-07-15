@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -207,6 +208,38 @@ func (a *API) handleRevokeKey(w http.ResponseWriter, r *http.Request, user auth.
 		}
 		httpx.WriteError(w, r, a.log, err)
 		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDeleteProject deletes a project and purges its event data. The
+// control-plane delete cascades to keys, issues and alert rules; the event data
+// in ClickHouse is purged best-effort — a purge failure must not fail the
+// request, because access is already gone and the data is unreachable.
+func (a *API) handleDeleteProject(w http.ResponseWriter, r *http.Request, user auth.User) {
+	ctx := r.Context()
+	projectID, err := pathUint(r, "project_id")
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	if err := a.authorizeProject(ctx, user, projectID); err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+
+	if err := a.pg.DeleteProject(ctx, projectID); err != nil {
+		if errors.Is(err, postgres.ErrNotFound) {
+			httpx.WriteError(w, r, a.log, httpx.ErrNotFound)
+			return
+		}
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+
+	if err := a.ch.PurgeProject(ctx, projectID); err != nil {
+		a.log.Error("purge project event data failed",
+			slog.Uint64("project_id", projectID), slog.Any("error", err))
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

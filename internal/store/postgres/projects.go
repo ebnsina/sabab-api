@@ -129,6 +129,21 @@ func (db *DB) IngestKeysForProject(ctx context.Context, projectID uint64) ([]Ing
 	return out, rows.Err()
 }
 
+// DeleteProject removes a project. Every dependent table — keys, issues, alert
+// rules, history — references it ON DELETE CASCADE, so this one statement takes
+// the whole control-plane footprint with it. The event data in ClickHouse is
+// purged separately by the caller.
+func (db *DB) DeleteProject(ctx context.Context, projectID uint64) error {
+	tag, err := db.Exec(ctx, `DELETE FROM projects WHERE id = $1`, projectID)
+	if err != nil {
+		return fmt.Errorf("delete project: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // RevokeIngestKey revokes one of a project's keys. It only touches a live key
 // scoped to the project, so a key cannot be revoked out from under another
 // project by guessing. Returns ErrNotFound if no live key matched.
