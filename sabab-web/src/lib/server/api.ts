@@ -204,3 +204,15 @@ export interface Activity {
 	kind: string;
 	at: string;
 }
+
+export interface LogEntry {
+	timestamp: string;
+	severity: string;
+	service: string;
+	body: string;
+	template?: string;
+	trace_id: string;
+	environment?: string;
+	release?: string;
+	attributes?: Record<string, string>;
+}

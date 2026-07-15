@@ -1,177 +1,183 @@
+@import 'tailwindcss';
+
 /*
- * Sabab design system.
+ * Sabab design system, on Tailwind v4.
  *
- * Dark-first, because this is a tool people open at 2am when something is on
- * fire — a bright white screen is hostile in that moment. The palette is a cool
- * slate with a single warm signal colour (amber) reserved for "this needs your
- * attention", so severity reads at a glance without a legend.
+ * Two themes, following the system setting by default, with a manual override.
+ * The palette is a cool slate with one warm signal colour (amber) reserved for
+ * the primary action and "needs attention", so severity reads at a glance.
+ *
+ * How theming works: the semantic palette lives in :root (light) with a dark
+ * override, keyed by BOTH `prefers-color-scheme` (the default) and a
+ * `data-theme` attribute (the manual toggle). `@theme inline` maps Tailwind's
+ * --color-* tokens onto those semantic vars, so a utility like `bg-surface`
+ * emits `var(--color-surface)` and re-resolves the instant the theme flips —
+ * no rebuild, no duplicated utilities.
  */
 
+/* Light — the default. Same principle as dark: separate surfaces by elevation
+   (a soft off-white canvas with white cards floating above it), and keep borders
+   a barely-there black-alpha used only where a hairline genuinely helps. */
 :root {
-	color-scheme: dark;
+	--bg: #f4f5f7;
+	--surface: #ffffff;
+	--surface-2: #f0f1f4;
+	--surface-3: #e6e8ec;
+	--border: rgba(15, 23, 42, 0.07);
+	--border-strong: rgba(15, 23, 42, 0.14);
 
-	/* Surfaces, darkest to lightest. */
-	--bg: #0b0e14;
-	--surface: #12161f;
-	--surface-2: #1a2029;
-	--surface-3: #232b37;
-	--border: #2b3441;
-	--border-strong: #3a4552;
+	--text: #1a2029;
+	--text-dim: #55606f;
+	--text-faint: #8b95a3;
 
-	/* Text. */
-	--text: #e6eaf0;
-	--text-dim: #9aa5b4;
-	--text-faint: #6b7686;
+	--accent: #e8920f;
+	--accent-hover: #cf8009;
+	--accent-dim: #b8790f;
+	--on-accent: #ffffff;
 
-	/* Brand + signal. Amber is the attention colour, used sparingly. */
+	--fatal: #d11f4a;
+	--error: #d9481f;
+	--warning: #b7770a;
+	--info: #2563eb;
+	--debug: #8b95a3;
+
+	--ok: #17935e;
+	--danger: #d11f4a;
+
+	/* A whisper of elevation to lift cards off the canvas — barely there. */
+	--elev: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.03);
+
+	color-scheme: light;
+}
+
+/* Dark, when the system prefers it and no manual choice overrides. */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		/* Elevation over outlines: each surface is a distinct shade of near-black,
+		   so panels separate by depth rather than by lines. Borders are a barely
+		   there white-alpha, used only where a hairline genuinely helps. */
+		--bg: #090a0d;
+		--surface: #131519;
+		--surface-2: #1b1e24;
+		--surface-3: #262a31;
+		--border: rgba(255, 255, 255, 0.07);
+		--border-strong: rgba(255, 255, 255, 0.13);
+
+		--text: #e7eaf0;
+		--text-dim: #99a2b0;
+		--text-faint: #667080;
+
+		--accent: #f5a623;
+		--accent-hover: #ffb840;
+		--accent-dim: #a9741a;
+		--on-accent: #1a1206;
+
+		--fatal: #f04a6e;
+		--error: #f0663f;
+		--warning: #f5a623;
+		--info: #4a9df0;
+		--debug: #667080;
+
+		--ok: #3fce8f;
+		--danger: #f04a6e;
+
+		/* Soft depth on near-black; subtle so it reads as elevation, not a glow. */
+		--elev: 0 1px 2px rgba(0, 0, 0, 0.25), 0 1px 4px rgba(0, 0, 0, 0.2);
+
+		color-scheme: dark;
+	}
+}
+
+/* Manual override — the toggle stamps data-theme on <html> and it wins over the
+   system setting in both directions. Same palette as the system-dark block. */
+:root[data-theme='dark'] {
+	--bg: #090a0d;
+	--surface: #131519;
+	--surface-2: #1b1e24;
+	--surface-3: #262a31;
+	--border: rgba(255, 255, 255, 0.07);
+	--border-strong: rgba(255, 255, 255, 0.13);
+
+	--text: #e7eaf0;
+	--text-dim: #99a2b0;
+	--text-faint: #667080;
+
 	--accent: #f5a623;
+	--accent-hover: #ffb840;
 	--accent-dim: #a9741a;
+	--on-accent: #1a1206;
 
-	/* Severity. These map to the level enum and are the ONE place the mapping
-	   is defined — components reference the variable, never a raw hex. */
-	--level-fatal: #f04a6e;
-	--level-error: #f0663f;
-	--level-warning: #f5a623;
-	--level-info: #4a9df0;
-	--level-debug: #6b7686;
+	--fatal: #f04a6e;
+	--error: #f0663f;
+	--warning: #f5a623;
+	--info: #4a9df0;
+	--debug: #667080;
 
 	--ok: #3fce8f;
 	--danger: #f04a6e;
 
-	--radius: 8px;
-	--radius-sm: 5px;
-	/* Mona Sans for UI, Geist Mono for code and identifiers. The system-font
-	   fallbacks matter: they hold the layout with metrically similar faces during
-	   the brief moment before the variable fonts load, so text does not reflow. */
-	--sans: 'Mona Sans Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
+	--elev: 0 1px 2px rgba(0, 0, 0, 0.25), 0 1px 4px rgba(0, 0, 0, 0.2);
+
+	color-scheme: dark;
+}
+
+@theme inline {
+	--color-bg: var(--bg);
+	--color-surface: var(--surface);
+	--color-surface-2: var(--surface-2);
+	--color-surface-3: var(--surface-3);
+	--color-border: var(--border);
+	--color-border-strong: var(--border-strong);
+
+	--color-text: var(--text);
+	--color-text-dim: var(--text-dim);
+	--color-text-faint: var(--text-faint);
+
+	--color-accent: var(--accent);
+	--color-accent-hover: var(--accent-hover);
+	--color-accent-dim: var(--accent-dim);
+	--color-on-accent: var(--on-accent);
+
+	--color-fatal: var(--fatal);
+	--color-error: var(--error);
+	--color-warning: var(--warning);
+	--color-info: var(--info);
+	--color-debug: var(--debug);
+
+	--color-ok: var(--ok);
+	--color-danger: var(--danger);
+
+	/* A soft elevation shadow, re-resolving per theme. */
+	--shadow-soft: var(--elev);
+
+	/* Buttons pill (rounded-full); inputs & cards rounded-xl (Tailwind default). */
+	--radius-xl: 0.75rem;
+
+	/* Self-hosted variable fonts (imported in the root layout). */
+	--font-sans: 'Mona Sans Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
 		sans-serif;
-	--mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', 'Menlo', monospace;
+	--font-mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', 'Menlo', monospace;
 
-	--shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+	--ease-out: cubic-bezier(0.2, 0, 0, 1);
 }
 
-* {
-	box-sizing: border-box;
-}
-
-html,
-body {
-	margin: 0;
-	padding: 0;
+html {
 	background: var(--bg);
 	color: var(--text);
-	font-family: var(--sans);
-	font-size: 14px;
-	line-height: 1.5;
+	font-family: var(--font-sans);
 	-webkit-font-smoothing: antialiased;
 }
 
-a {
-	color: inherit;
-	text-decoration: none;
-}
-
-button {
-	font-family: inherit;
-	cursor: pointer;
-}
-
-h1,
-h2,
-h3 {
-	font-weight: 600;
-	letter-spacing: -0.01em;
+body {
 	margin: 0;
 }
 
-code,
-.mono {
-	font-family: var(--mono);
-	font-size: 0.92em;
-}
-
-/* Buttons ------------------------------------------------------------------ */
-
-.btn {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	padding: 7px 14px;
-	border-radius: var(--radius-sm);
-	border: 1px solid var(--border-strong);
-	background: var(--surface-2);
-	color: var(--text);
-	font-size: 13px;
-	font-weight: 500;
-	transition: background 0.12s, border-color 0.12s;
-}
-.btn:hover {
-	background: var(--surface-3);
-	border-color: var(--text-faint);
-}
-.btn-primary {
-	background: var(--accent);
-	border-color: var(--accent);
-	color: #1a1206;
-	font-weight: 600;
-}
-.btn-primary:hover {
-	background: #ffb840;
-	border-color: #ffb840;
-}
-.btn-ghost {
-	background: transparent;
-	border-color: transparent;
-}
-.btn-ghost:hover {
-	background: var(--surface-2);
-	border-color: var(--border);
-}
-
-/* Inputs ------------------------------------------------------------------- */
-
-.input {
-	width: 100%;
-	padding: 9px 12px;
-	border-radius: var(--radius-sm);
-	border: 1px solid var(--border);
-	background: var(--surface);
-	color: var(--text);
-	font-size: 14px;
-	font-family: inherit;
-}
-.input:focus {
-	outline: none;
-	border-color: var(--accent-dim);
-	box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.12);
-}
-.input::placeholder {
-	color: var(--text-faint);
-}
-
-/* Cards -------------------------------------------------------------------- */
-
-.card {
-	background: var(--surface);
-	border: 1px solid var(--border);
-	border-radius: var(--radius);
-}
-
-/* Utility ------------------------------------------------------------------ */
-
-.muted {
-	color: var(--text-dim);
-}
-.faint {
-	color: var(--text-faint);
-}
-.row {
-	display: flex;
-	align-items: center;
-}
-.gap-sm {
-	gap: 8px;
-}
-.gap {
-	gap: 16px;
+/* Honour the OS "reduce motion" setting everywhere. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
+	}
 }

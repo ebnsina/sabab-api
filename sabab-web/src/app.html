@@ -4,6 +4,15 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<script>
+			// Stamp the saved theme before first paint, so a user who chose light or
+			// dark never sees a flash of the other one. 'system' leaves the attribute
+			// off and lets the CSS prefers-color-scheme query decide.
+			try {
+				var t = localStorage.getItem('sabab-theme');
+				if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+			} catch (e) {}
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

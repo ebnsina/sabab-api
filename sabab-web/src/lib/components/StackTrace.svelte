@@ -1,30 +1,26 @@
 <script lang="ts">
 	import type { ExceptionValue, Frame } from '$lib/server/api';
 	import { HugeiconsIcon, ChevronRightIcon, ChevronDownIcon } from '$lib/icons';
+	import { cx } from '$lib/ui';
 
 	/**
-	 * The stack-trace viewer. This is the payoff of the whole pipeline: the frame
-	 * the user sees here is symbolicated back to original source, with the
-	 * offending line shown in context. If this reads well, the product works.
+	 * The stack-trace viewer. The payoff of the whole pipeline: the frame shown
+	 * here is symbolicated back to original source, with the offending line in
+	 * context. If this reads well, the product works.
 	 */
 	let { exceptions = [] }: { exceptions?: ExceptionValue[] } = $props();
 
-	// The wire format is innermost-last (the last exception is the one that
-	// threw). We show that one first, because it is the error the developer
-	// actually needs — the wrappers are context below it.
+	// Wire format is innermost-last; show the one that threw first, wrappers below.
 	const ordered = $derived([...exceptions].reverse());
 
-	// Non-app frames (framework, node_modules) are collapsed by default: they are
-	// noise between the customer's own frames, and showing them all buries the
-	// two lines that matter. Toggled per exception.
+	// Non-app frames collapse by default — they are noise between the customer's
+	// own frames, and showing them all buries the lines that matter.
 	let expanded = $state<Record<number, boolean>>({});
 
 	function visibleFrames(frames: Frame[] | undefined, idx: number): Frame[] {
 		if (!frames) return [];
 		if (expanded[idx]) return [...frames].reverse();
 		const inApp = frames.filter((f) => f.in_app);
-		// If nothing is marked in-app (a stack we could not symbolicate), showing
-		// nothing would be worse than showing everything.
 		return (inApp.length > 0 ? inApp : frames).slice().reverse();
 	}
 
@@ -41,36 +37,51 @@
 </script>
 
 {#each ordered as exc, idx (idx)}
-	<div class="exception">
-		<div class="exc-head">
-			<span class="exc-type mono">{exc.type}</span>
-			{#if exc.value}<span class="exc-value">{exc.value}</span>{/if}
+	<div class="mb-5">
+		<div class="mb-3 flex flex-wrap items-baseline gap-2">
+			<span class="font-mono text-[15px] font-semibold text-error">{exc.type}</span>
+			{#if exc.value}<span class="text-text-dim">{exc.value}</span>{/if}
 		</div>
 
 		{#if idx > 0}
-			<div class="caused-by faint">caused the above</div>
+			<div class="mb-2 text-[11px] text-text-faint">caused the above</div>
 		{/if}
 
-		<div class="frames">
+		<div class="flex flex-col gap-0.5">
 			{#each visibleFrames(exc.frames, idx) as frame, fi (fi)}
-				<div class="frame" class:in-app={frame.in_app}>
-					<div class="frame-head">
-						<span class="fn mono">{frame.function || '<anonymous>'}</span>
-						<span class="loc mono faint">{frameLocation(frame)}</span>
+				<div
+					class={cx(
+						'overflow-hidden rounded-lg border',
+						frame.in_app ? 'border-border bg-surface' : 'border-transparent'
+					)}
+				>
+					<div
+						class={cx(
+							'flex flex-wrap items-baseline gap-2.5 px-3 py-1.5',
+							frame.in_app && 'bg-surface-2'
+						)}
+					>
+						<span class="font-mono text-[12.5px] font-semibold">
+							{frame.function || '<anonymous>'}
+						</span>
+						<span class="font-mono text-xs text-text-faint">{frameLocation(frame)}</span>
 					</div>
 
 					{#if frame.context_line}
-						<!-- Source context: the actual code, not just a coordinate. This is
-						     what makes it a stack-trace VIEWER rather than a stack string. -->
-						<div class="context">
+						<!-- Source context: the actual code, not just a coordinate. -->
+						<div class="overflow-x-auto border-t border-border py-1.5">
 							{#each frame.pre_context ?? [] as line, i (i)}
-								<div class="src-line pre"><code>{line || ' '}</code></div>
+								<div class="px-3 py-px whitespace-pre">
+									<code class="text-xs text-text-faint">{line || ' '}</code>
+								</div>
 							{/each}
-							<div class="src-line hit">
-								<code>{frame.context_line}</code>
+							<div class="border-l-2 border-error bg-error/10 px-3 py-px whitespace-pre">
+								<code class="text-xs text-text">{frame.context_line}</code>
 							</div>
 							{#each frame.post_context ?? [] as line, i (i)}
-								<div class="src-line post"><code>{line || ' '}</code></div>
+								<div class="px-3 py-px whitespace-pre">
+									<code class="text-xs text-text-faint">{line || ' '}</code>
+								</div>
 							{/each}
 						</div>
 					{/if}
@@ -78,14 +89,20 @@
 			{/each}
 
 			{#if hiddenCount(exc.frames, idx) > 0}
-				<button class="toggle" onclick={() => (expanded[idx] = true)}>
+				<button
+					class="mt-1 inline-flex w-fit items-center gap-1 px-2 py-1 text-xs text-text-dim hover:text-text"
+					onclick={() => (expanded[idx] = true)}
+				>
 					<HugeiconsIcon icon={ChevronRightIcon} size={13} />
 					Show {hiddenCount(exc.frames, idx)} more frame{hiddenCount(exc.frames, idx) === 1
 						? ''
 						: 's'} from libraries
 				</button>
 			{:else if expanded[idx]}
-				<button class="toggle" onclick={() => (expanded[idx] = false)}>
+				<button
+					class="mt-1 inline-flex w-fit items-center gap-1 px-2 py-1 text-xs text-text-dim hover:text-text"
+					onclick={() => (expanded[idx] = false)}
+				>
 					<HugeiconsIcon icon={ChevronDownIcon} size={13} />
 					Collapse library frames
 				</button>
@@ -93,93 +110,3 @@
 		</div>
 	</div>
 {/each}
-
-<style>
-	.exception {
-		margin-bottom: 20px;
-	}
-	.exc-head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 8px;
-		margin-bottom: 12px;
-	}
-	.exc-type {
-		font-size: 15px;
-		font-weight: 600;
-		color: var(--level-error);
-	}
-	.exc-value {
-		color: var(--text-dim);
-	}
-	.caused-by {
-		font-size: 11px;
-		margin-bottom: 8px;
-	}
-	.frames {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-	.frame {
-		border-radius: var(--radius-sm);
-		border: 1px solid transparent;
-		overflow: hidden;
-	}
-	.frame.in-app {
-		border-color: var(--border);
-		background: var(--surface);
-	}
-	.frame-head {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 10px;
-		align-items: baseline;
-		padding: 7px 12px;
-	}
-	.frame.in-app .frame-head {
-		background: var(--surface-2);
-	}
-	.fn {
-		font-weight: 600;
-		font-size: 12.5px;
-	}
-	.loc {
-		font-size: 12px;
-	}
-	.context {
-		border-top: 1px solid var(--border);
-		padding: 6px 0;
-		overflow-x: auto;
-	}
-	.src-line {
-		padding: 1px 12px;
-		white-space: pre;
-	}
-	.src-line code {
-		font-size: 12px;
-		color: var(--text-faint);
-	}
-	.src-line.hit {
-		background: color-mix(in srgb, var(--level-error) 12%, transparent);
-		border-left: 2px solid var(--level-error);
-	}
-	.src-line.hit code {
-		color: var(--text);
-	}
-	.toggle {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		margin-top: 4px;
-		padding: 5px 8px;
-		background: transparent;
-		border: none;
-		color: var(--text-dim);
-		font-size: 12px;
-	}
-	.toggle:hover {
-		color: var(--text);
-	}
-</style>

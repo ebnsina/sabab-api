@@ -1,24 +1,33 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { HugeiconsIcon, BrandIcon, SpinnerIcon } from '$lib/icons';
+	import { fade } from 'svelte/transition';
+	import { HugeiconsIcon, BrandIcon } from '$lib/icons';
+	import { Button, Card, Input, Spinner } from '$lib/ui';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
 	let submitting = $state(false);
+	let email = $state('');
+	let password = $state('');
+
+	$effect(() => {
+		email = form?.email ?? '';
+	});
 </script>
 
 <svelte:head><title>Sign in · Sabab</title></svelte:head>
 
-<div class="wrap">
-	<div class="card login">
-		<div class="brand">
-			<HugeiconsIcon icon={BrandIcon} size={22} color="var(--accent)" strokeWidth={2} />
-			<span class="wordmark">sabab</span>
+<div class="grid min-h-screen place-items-center p-6">
+	<Card class="w-full max-w-sm p-8 shadow-[0_4px_20px_rgba(0,0,0,0.4)]">
+		<div class="flex items-center gap-2.5">
+			<HugeiconsIcon icon={BrandIcon} size={22} color="var(--color-accent)" strokeWidth={2} />
+			<span class="text-xl font-bold tracking-tight">sabab</span>
 		</div>
-		<p class="muted tagline">See what broke, why, and for whom.</p>
+		<p class="mt-1.5 mb-6 text-sm text-text-dim">See what broke, why, and for whom.</p>
 
 		<form
 			method="POST"
+			class="flex flex-col gap-3.5"
 			use:enhance={() => {
 				submitting = true;
 				return async ({ update }) => {
@@ -27,106 +36,42 @@
 				};
 			}}
 		>
-			<label>
-				<span>Email</span>
-				<input
-					class="input"
+			<label class="flex flex-col gap-1.5">
+				<span class="text-xs font-medium text-text-dim">Email</span>
+				<Input
 					type="email"
 					name="email"
-					value={form?.email ?? ''}
+					bind:value={email}
 					placeholder="you@example.com"
 					autocomplete="username"
 					required
 				/>
 			</label>
-			<label>
-				<span>Password</span>
-				<input
-					class="input"
+			<label class="flex flex-col gap-1.5">
+				<span class="text-xs font-medium text-text-dim">Password</span>
+				<Input
 					type="password"
 					name="password"
+					bind:value={password}
 					autocomplete="current-password"
 					required
 				/>
 			</label>
 
 			{#if form?.error}
-				<p class="error" role="alert">{form.error}</p>
+				<p
+					transition:fade={{ duration: 150 }}
+					class="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger"
+					role="alert"
+				>
+					{form.error}
+				</p>
 			{/if}
 
-			<button class="btn btn-primary submit" type="submit" disabled={submitting}>
-				{#if submitting}
-					<span class="spin"><HugeiconsIcon icon={SpinnerIcon} size={15} /></span>
-				{/if}
+			<Button type="submit" variant="primary" disabled={submitting} class="mt-1 w-full py-2.5">
+				{#if submitting}<Spinner />{/if}
 				Sign in
-			</button>
+			</Button>
 		</form>
-	</div>
+	</Card>
 </div>
-
-<style>
-	.wrap {
-		min-height: 100vh;
-		display: grid;
-		place-items: center;
-		padding: 24px;
-	}
-	.login {
-		width: 100%;
-		max-width: 360px;
-		padding: 32px;
-		box-shadow: var(--shadow);
-	}
-	.brand {
-		display: flex;
-		align-items: center;
-		gap: 9px;
-	}
-	.wordmark {
-		font-size: 20px;
-		font-weight: 700;
-		letter-spacing: -0.02em;
-	}
-	.tagline {
-		margin: 6px 0 24px;
-		font-size: 13px;
-	}
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 14px;
-	}
-	label {
-		display: flex;
-		flex-direction: column;
-		gap: 5px;
-	}
-	label span {
-		font-size: 12px;
-		color: var(--text-dim);
-		font-weight: 500;
-	}
-	.error {
-		margin: 0;
-		padding: 8px 11px;
-		border-radius: var(--radius-sm);
-		background: color-mix(in srgb, var(--danger) 12%, transparent);
-		border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
-		color: var(--danger);
-		font-size: 13px;
-	}
-	.submit {
-		justify-content: center;
-		margin-top: 4px;
-		padding: 9px;
-	}
-	.spin {
-		display: inline-flex;
-		animation: spin 0.7s linear infinite;
-	}
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
-	}
-</style>

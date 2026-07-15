@@ -1,41 +1,20 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { HugeiconsIcon, AlertIcon, HomeIcon } from '$lib/icons';
+	import { Button } from '$lib/ui';
 
-	// The message and status come from whatever `error()` was thrown — a 404 from
-	// a missing issue, a 503 from an API outage. We show the real one rather than
-	// a generic "something went wrong", because the difference tells the user
-	// whether to retry or to check the URL.
+	// The real status and message from whatever error() was thrown — a 404 from a
+	// missing issue, a 503 from an API outage. The difference tells the user
+	// whether to retry or check the URL, so we show it rather than a generic line.
 	const status = $derived(page.status);
 	const message = $derived(page.error?.message ?? 'Something went wrong.');
 </script>
 
 <svelte:head><title>{status} · Sabab</title></svelte:head>
 
-<div class="error-page">
-	<HugeiconsIcon icon={AlertIcon} size={36} color="var(--level-warning)" strokeWidth={1.8} />
-	<div class="code">{status}</div>
-	<p class="message">{message}</p>
-	<a class="btn" href="/"><HugeiconsIcon icon={HomeIcon} size={15} /> Back to issues</a>
+<div class="flex flex-col items-center gap-3 px-6 py-36 text-center">
+	<HugeiconsIcon icon={AlertIcon} size={36} color="var(--color-warning)" strokeWidth={1.8} />
+	<div class="text-[40px] font-bold tracking-tight">{status}</div>
+	<p class="mb-2 max-w-md text-text-dim">{message}</p>
+	<Button href="/"><HugeiconsIcon icon={HomeIcon} size={15} /> Back to issues</Button>
 </div>
-
-<style>
-	.error-page {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 12px;
-		padding: 140px 24px;
-		text-align: center;
-	}
-	.code {
-		font-size: 40px;
-		font-weight: 700;
-		letter-spacing: -0.02em;
-	}
-	.message {
-		color: var(--text-dim);
-		margin: 0 0 8px;
-		max-width: 420px;
-	}
-</style>
