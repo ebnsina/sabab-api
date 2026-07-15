@@ -88,7 +88,31 @@ func (g *Gateway) Handler() http.Handler {
 	return httpx.Chain(mux,
 		httpx.Recover(g.log),
 		httpx.LogRequests(g.log),
+		ingestCORS(),
 	)
+}
+
+// ingestCORS lets a browser SDK POST telemetry cross-origin. It runs on the
+// customer's own domain, never ours, so any origin must be allowed — and it is
+// safe to: the ingest key is public and write-only, and no cookies are involved,
+// so a wildcard is both correct and required (a browser rejects "*" alongside
+// credentials). Without this, the SDK's custom X-Sabab-Key header triggers a
+// preflight the gateway would 405, and no browser data would ever arrive.
+func ingestCORS() httpx.Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Add("Vary", "Origin")
+			if r.Method == http.MethodOptions {
+				w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, "+KeyHeader)
+				w.Header().Set("Access-Control-Max-Age", "86400")
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // acceptedResponse tells the SDK exactly what we took and what we did not.
