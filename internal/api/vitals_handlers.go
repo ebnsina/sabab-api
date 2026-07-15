@@ -51,5 +51,12 @@ func (a *API) handleWebVitals(w http.ResponseWriter, r *http.Request, user auth.
 		}
 		results = append(results, vitalResult{Metric: name, P75: v, Found: found})
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"vitals": results})
+
+	byPage, err := a.ch.VitalsByPage(ctx, projectID, from, to, rollup, 50)
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"vitals": results, "by_page": byPage})
 }
