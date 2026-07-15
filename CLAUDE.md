@@ -48,16 +48,24 @@ earn its space.
 The look is deliberate: confident and modern, never funky or toy-like. Landing
 page and dashboard share one visual language.
 
-- **Shape.** Buttons are **pill-shaped** (fully rounded, `--radius-full`).
-  Inputs, textareas, selects and cards use a generous **`--radius-xl` (12px)**.
-  Small chips/badges use `--radius-sm`. Consistency here is most of what makes it
-  read as designed rather than assembled.
+- **Shape.** One radius everywhere it counts: buttons, inputs, textareas,
+  selects, cards and segmented controls all use **`--radius-xl` (12px)** — a
+  button sits beside an input constantly, and a shared corner is what makes a
+  toolbar read as one engineered unit rather than assembled parts. Segments
+  inside a segmented control use a slightly tighter inner radius (~`0.6rem`) so
+  they nest concentrically. Small chips/badges use `--radius-sm`. Fully-round
+  (`rounded-full`) is reserved for genuinely circular things — avatars, status
+  dots, progress tracks — never for buttons.
 - **Focus.** One focus treatment everywhere: a **2px ring in the brand colour
   with a 2px offset** (the offset gap shows the surface behind, so the ring
   reads crisp on any background) plus a subtly lifted border. Use the
   `--focus-ring` box-shadow token; never leave a browser default outline.
-- **Brand colour** (amber accent) is approved — keep it. Use it for the primary
-  action, focus, and "needs attention", and sparingly elsewhere.
+- **Brand colour** (indigo accent — `#635bff` light, `#8b7cff` dark) is
+  approved. Use it for the primary action, focus, and "needs attention", and
+  sparingly elsewhere. It deliberately sits OFF the severity spectrum: amber
+  stays reserved for `warning` severity, so the brand never reads as a warning.
+  Never hard-code the hex — reference the `--accent` token so both themes stay
+  correct.
 - **Motion.** Apply Svelte transitions where they aid comprehension — content
   fading in on load, details sliding open, a toast easing in. Keep it
   **professional**: short durations (120–200ms), standard easing, no bounce or

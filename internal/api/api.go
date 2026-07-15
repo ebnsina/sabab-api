@@ -75,6 +75,11 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/metrics", a.authenticated(a.handleListMetrics))
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/metrics/query", a.authenticated(a.handleQueryMetric))
 
+	// Performance (APM) — aggregation over spans.
+	mux.HandleFunc("GET /api/v1/projects/{project_id}/performance/transactions", a.authenticated(a.handleTransactions))
+	mux.HandleFunc("GET /api/v1/projects/{project_id}/performance/transactions/samples", a.authenticated(a.handleTransactionSamples))
+	mux.HandleFunc("GET /api/v1/projects/{project_id}/performance/queries", a.authenticated(a.handleSlowQueries))
+
 	// Alert rules.
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/alert-rules", a.authenticated(a.handleListAlertRules))
 	mux.HandleFunc("POST /api/v1/projects/{project_id}/alert-rules", a.authenticated(a.handleCreateAlertRule))
