@@ -32,11 +32,22 @@ func decodeCursor(r *http.Request, out any) error {
 }
 
 // paginated shapes the standard list response: the items under `key`, plus a
-// `next_cursor` only when a further page exists.
-func paginated(key string, items any, nextCursor string) map[string]any {
-	resp := map[string]any{key: items}
+// `next_cursor` only when a further page exists. A nil slice becomes [], so an
+// empty project returns an empty array the dashboard can iterate — not null.
+func paginated[T any](key string, items []T, nextCursor string) map[string]any {
+	resp := map[string]any{key: orEmpty(items)}
 	if nextCursor != "" {
 		resp["next_cursor"] = nextCursor
 	}
 	return resp
+}
+
+// orEmpty turns a nil slice into an empty one, so JSON encodes [] rather than
+// null — the difference between a dashboard that renders an empty list and one
+// that throws on it.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
 }

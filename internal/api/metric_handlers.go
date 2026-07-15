@@ -27,7 +27,7 @@ func (a *API) handleListMetrics(w http.ResponseWriter, r *http.Request, user aut
 		httpx.WriteError(w, r, a.log, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"metrics": names})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"metrics": orEmpty(names)})
 }
 
 // handleQueryMetric returns a metric time series for the chart.
@@ -71,5 +71,5 @@ func (a *API) handleQueryMetric(w http.ResponseWriter, r *http.Request, user aut
 		httpx.WriteError(w, r, a.log, httpx.NewError(http.StatusBadRequest, "bad_query", err.Error()))
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"points": points, "rollup": rollup})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"points": orEmpty(points), "rollup": rollup})
 }

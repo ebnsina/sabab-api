@@ -41,7 +41,7 @@ func (a *API) handleTransactions(w http.ResponseWriter, r *http.Request, user au
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"transactions": txns,
+		"transactions": orEmpty(txns),
 		"apdex_t_ms":   apdexT.Milliseconds(),
 	})
 }
@@ -71,7 +71,7 @@ func (a *API) handleTransactionSamples(w http.ResponseWriter, r *http.Request, u
 		httpx.WriteError(w, r, a.log, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"samples": samples})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"samples": orEmpty(samples)})
 }
 
 // handleSlowQueries ranks database statements by the total time spent in them.
@@ -93,7 +93,7 @@ func (a *API) handleSlowQueries(w http.ResponseWriter, r *http.Request, user aut
 		httpx.WriteError(w, r, a.log, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"queries": queries})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"queries": orEmpty(queries)})
 }
 
 // nPlusOneThreshold is the minimum fan-out (identical queries under one parent)
@@ -119,7 +119,7 @@ func (a *API) handleNPlusOne(w http.ResponseWriter, r *http.Request, user auth.U
 		httpx.WriteError(w, r, a.log, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"patterns": patterns, "threshold": nPlusOneThreshold})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"patterns": orEmpty(patterns), "threshold": nPlusOneThreshold})
 }
 
 // handleReleaseComparison compares the newest release to the one before it.
@@ -141,5 +141,6 @@ func (a *API) handleReleaseComparison(w http.ResponseWriter, r *http.Request, us
 		httpx.WriteError(w, r, a.log, err)
 		return
 	}
+	cmp.Endpoints = orEmpty(cmp.Endpoints)
 	httpx.WriteJSON(w, http.StatusOK, cmp)
 }
