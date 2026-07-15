@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +11,88 @@ import (
 	"github.com/ebnsina/sabab-api/internal/auth"
 	"github.com/ebnsina/sabab-api/internal/httpx"
 )
+
+type createProjectRequest struct {
+	Name     string `json:"name"`
+	Platform string `json:"platform"`
+}
+
+// handleCreateProject creates a project in the user's org, mints its first
+// ingest key, and returns it with a ready-to-paste DSN — so a new project is one
+// request away from sending data.
+func (a *API) handleCreateProject(w http.ResponseWriter, r *http.Request, user auth.User) {
+	ctx := r.Context()
+
+	var req createProjectRequest
+	if err := decode(r, &req); err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		httpx.WriteError(w, r, a.log, httpx.NewError(http.StatusBadRequest, "bad_project", "A project needs a name."))
+		return
+	}
+	platform := strings.TrimSpace(req.Platform)
+	if platform == "" {
+		platform = "javascript"
+	}
+
+	orgID, err := a.pg.OrgForUser(ctx, user.ID)
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+
+	project, err := a.pg.CreateProject(ctx, orgID, makeSlug(name), name, platform)
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+
+	key, err := auth.NewIngestKey()
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	if err := a.pg.CreateIngestKey(ctx, project.ID, key, "default"); err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
+		"project": project,
+		"dsn":     a.buildDSN(key, project.ID),
+	})
+}
+
+// makeSlug turns a project name into a valid slug (^[a-z0-9]+(-[a-z0-9]+)*$),
+// with a short random suffix so it is unique within the org without a lookup.
+func makeSlug(name string) string {
+	var b strings.Builder
+	prevHyphen := false
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			prevHyphen = false
+		case !prevHyphen && b.Len() > 0:
+			b.WriteByte('-')
+			prevHyphen = true
+		}
+	}
+	base := strings.Trim(b.String(), "-")
+	if len(base) < 2 {
+		base = "project"
+	}
+	if len(base) > 55 {
+		base = strings.Trim(base[:55], "-")
+	}
+
+	suffix := make([]byte, 2)
+	_, _ = rand.Read(suffix)
+	return base + "-" + hex.EncodeToString(suffix)
+}
 
 // keyResponse is one ingest key with the ready-to-paste DSN built from it.
 type keyResponse struct {

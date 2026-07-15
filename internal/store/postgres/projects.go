@@ -81,6 +81,21 @@ func (db *DB) CreateIngestKey(ctx context.Context, projectID uint64, publicKey, 
 	return nil
 }
 
+// OrgForUser returns the organization a new project should belong to — the
+// user's first (and, today, only) org membership. A user with no org cannot
+// create a project, which the caller surfaces.
+func (db *DB) OrgForUser(ctx context.Context, userID uint64) (uint64, error) {
+	const query = `SELECT org_id FROM org_members WHERE user_id = $1 ORDER BY created_at, org_id LIMIT 1`
+	var orgID uint64
+	if err := db.QueryRow(ctx, query, userID).Scan(&orgID); err != nil {
+		if isNoRows(err) {
+			return 0, ErrNotFound
+		}
+		return 0, fmt.Errorf("org for user: %w", err)
+	}
+	return orgID, nil
+}
+
 // IngestKey is one live public key for a project.
 type IngestKey struct {
 	PublicKey string    `json:"public_key"`
