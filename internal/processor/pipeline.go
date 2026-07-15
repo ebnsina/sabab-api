@@ -61,6 +61,9 @@ func NewPipeline(scrubber *scrub.Scrubber, symbolicator Symbolicator, issues Iss
 // Processed is the outcome for one job.
 type Processed struct {
 	Row clickhouse.ErrorRow
+	// Title is the issue headline, carried so an alert signal can render without
+	// querying back.
+	Title string
 	// New and Regressed are what the alerter (M1.5) fires on.
 	New       bool
 	Regressed bool
@@ -114,6 +117,7 @@ func (p *Pipeline) Process(ctx context.Context, job ingest.Job) (Processed, erro
 
 	return Processed{
 		Row:       row,
+		Title:     title(item.Error),
 		New:       result.New,
 		Regressed: result.Regressed,
 		IssueID:   result.IssueID,

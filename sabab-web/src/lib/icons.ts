@@ -22,7 +22,7 @@ export {
 	UserMultiple02Icon as UsersIcon,
 	HashIcon as ReleaseIcon,
 	CheckmarkCircle02Icon as ResolveIcon,
-	Notification03Icon as UnresolvedIcon,
+	Bug01Icon as UnresolvedIcon,
 	ViewOffIcon as IgnoreIcon,
 	ArrowRight01Icon as ChevronRightIcon,
 	ArrowDown01Icon as ChevronDownIcon,

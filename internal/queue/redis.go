@@ -53,6 +53,32 @@ func NewRedis(ctx context.Context, cfg config.Redis) (*Redis, error) {
 	return &Redis{client: client, stream: IngestStream, maxLen: DefaultMaxLen}, nil
 }
 
+// OnStream returns a handle to a different stream sharing the same connection.
+//
+// The alerts stream is far lower-volume than ingest and has its own retention,
+// so it is a separate stream — but it must not open a second Redis connection
+// pool. One pool per process; this clones the handle, not the client.
+func (q *Redis) OnStream(name string, maxLen int64) *Redis {
+	clone := *q
+	clone.stream = name
+	clone.maxLen = maxLen
+	// Reset any group binding: a stream handle starts as a producer, and a
+	// consumer is derived from it with WithGroup.
+	clone.group = ""
+	clone.consumer = ""
+	return &clone
+}
+
+// AlertStream is the low-volume stream carrying new-issue and regression
+// signals from the processor to the alerter.
+const AlertStream = "sabab:alerts"
+
+// AlertStreamMaxLen bounds the alert stream. Much smaller than ingest: alert
+// signals are rare, and if the alerter falls this far behind, dropping the
+// oldest pending alert is the right failure — a week-old "new issue" notice is
+// noise, not signal.
+const AlertStreamMaxLen int64 = 100_000
+
 // WithGroup returns a consumer bound to a consumer group, creating both the
 // group and the stream if they do not exist.
 //

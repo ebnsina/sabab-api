@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,32 @@ type Config struct {
 	Gateway   Server
 	API       Server
 	Processor Processor
+	Alerter   Alerter
+	SMTP      SMTP
+
+	// DashboardURL is the public base URL of the dashboard, used to build the
+	// "view issue" links in alerts. Without it an alert can say what broke but
+	// not take you to it.
+	DashboardURL string
+}
+
+// Alerter tunes the alert-evaluation service.
+type Alerter struct {
+	ConsumerGroup string
+	ConsumerName  string
+	// FrequencyInterval is how often frequency-threshold rules are evaluated.
+	// New-issue and regression alerts are event-driven and do not wait for it.
+	FrequencyInterval time.Duration
+}
+
+// SMTP configures outbound email. An empty Host puts the email sender in
+// log-only mode.
+type SMTP struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	From     string
 }
 
 // Postgres is the control plane: orgs, projects, issue state, alert rules.
@@ -142,6 +169,18 @@ func Load() (*Config, error) {
 	cfg.Processor.ConsumerName = env("SABAB_PROCESSOR_CONSUMER_NAME", hostname)
 	cfg.Processor.BatchSize = mustInt(&errs, "SABAB_PROCESSOR_BATCH_SIZE", 128)
 	cfg.Processor.Concurrency = mustInt(&errs, "SABAB_PROCESSOR_CONCURRENCY", 8)
+
+	cfg.Alerter.ConsumerGroup = env("SABAB_ALERTER_CONSUMER_GROUP", "alerters")
+	cfg.Alerter.ConsumerName = env("SABAB_ALERTER_CONSUMER_NAME", hostname)
+	cfg.Alerter.FrequencyInterval = mustDuration(&errs, "SABAB_ALERTER_FREQUENCY_INTERVAL", time.Minute)
+
+	cfg.SMTP.Host = env("SABAB_SMTP_HOST", "")
+	cfg.SMTP.Port = mustInt(&errs, "SABAB_SMTP_PORT", 587)
+	cfg.SMTP.Username = env("SABAB_SMTP_USERNAME", "")
+	cfg.SMTP.Password = env("SABAB_SMTP_PASSWORD", "")
+	cfg.SMTP.From = env("SABAB_SMTP_FROM", "alerts@sabab.local")
+
+	cfg.DashboardURL = strings.TrimRight(env("SABAB_DASHBOARD_URL", "http://localhost:5173"), "/")
 
 	// Parse errors and validation errors are reported together. Short-circuiting
 	// after the parse pass would hide a bad SABAB_LOG_LEVEL behind an unrelated

@@ -62,6 +62,12 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/issues/{issue_id}/status", a.authenticated(a.handleSetStatus))
 	mux.HandleFunc("POST /api/v1/issues/{issue_id}/assign", a.authenticated(a.handleAssign))
 
+	// Alert rules.
+	mux.HandleFunc("GET /api/v1/projects/{project_id}/alert-rules", a.authenticated(a.handleListAlertRules))
+	mux.HandleFunc("POST /api/v1/projects/{project_id}/alert-rules", a.authenticated(a.handleCreateAlertRule))
+	mux.HandleFunc("DELETE /api/v1/projects/{project_id}/alert-rules/{rule_id}", a.authenticated(a.handleDeleteAlertRule))
+	mux.HandleFunc("POST /api/v1/projects/{project_id}/alert-rules/{rule_id}/toggle", a.authenticated(a.handleToggleAlertRule))
+
 	mux.HandleFunc("/", httpx.NotFound(a.log))
 
 	return httpx.Chain(mux,

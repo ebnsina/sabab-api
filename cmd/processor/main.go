@@ -75,6 +75,11 @@ func run(ctx context.Context) error {
 	symbolicator := symbolicate.New(pg, artifacts, log)
 	pipeline := processor.NewPipeline(scrub.Default(), symbolicator, pg)
 
+	// The alert signal stream. New-issue and regression signals are published
+	// here after each write; the alerter consumes them. A separate stream on the
+	// same connection, not a second Redis.
+	alertProducer := q.OnStream(queue.AlertStream, queue.AlertStreamMaxLen)
+
 	opts := processor.DefaultOptions()
 	opts.BatchSize = cfg.Processor.BatchSize
 
@@ -92,7 +97,7 @@ func run(ctx context.Context) error {
 		slog.String("consumer", cfg.Processor.ConsumerName),
 		slog.Int("batch_size", opts.BatchSize))
 
-	return processor.New(consumer, pipeline, ch, opts, log).Run(ctx)
+	return processor.New(consumer, pipeline, ch, alertProducer, opts, log).Run(ctx)
 }
 
 // serveHealth exposes /healthz and /readyz on the port after the gateway's.

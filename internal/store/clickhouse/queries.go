@@ -226,3 +226,44 @@ func scanEvent(rows rowScanner) (Event, error) {
 	}
 	return e, nil
 }
+
+// FrequentGroup is one group that crossed a frequency threshold.
+type FrequentGroup struct {
+	GroupHash uint64
+	Count     uint64
+}
+
+// FrequentGroups returns the groups in a project whose event count since `since`
+// is at least `threshold`.
+//
+// This backs frequency alert rules ("page me when a bug happens more than N
+// times in M minutes"). It reads the raw `errors` table rather than the hourly
+// MV because alert windows are minutes, finer than the MV's 1h buckets — and the
+// window is short, so the scan is bounded by the leading (project_id, hour) sort
+// key rather than being a full scan.
+func (db *DB) FrequentGroups(ctx context.Context, projectID uint64, since time.Time, threshold uint64) ([]FrequentGroup, error) {
+	const q = `
+		SELECT group_hash, count() AS c
+		FROM errors
+		WHERE project_id = ? AND timestamp >= ?
+		GROUP BY group_hash
+		HAVING c >= ?
+		ORDER BY c DESC
+		LIMIT 100`
+
+	rows, err := db.Query(ctx, q, projectID, since, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("query frequent groups: %w", err)
+	}
+	defer rows.Close()
+
+	var out []FrequentGroup
+	for rows.Next() {
+		var g FrequentGroup
+		if err := rows.Scan(&g.GroupHash, &g.Count); err != nil {
+			return nil, fmt.Errorf("scan frequent group: %w", err)
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}

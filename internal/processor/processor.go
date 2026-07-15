@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/ebnsina/sabab-api/internal/grouping"
 	"github.com/ebnsina/sabab-api/internal/ingest"
 	"github.com/ebnsina/sabab-api/internal/queue"
 	"github.com/ebnsina/sabab-api/internal/store/clickhouse"
@@ -58,21 +59,30 @@ func DefaultOptions() Options {
 	}
 }
 
+// AlertPublisher is where new-issue and regression signals go. An interface, and
+// optional (may be nil): the processor's job is to write events, and it must
+// keep doing that even if the alert path is unavailable.
+type AlertPublisher interface {
+	Publish(ctx context.Context, bodies ...[]byte) error
+}
+
 // Processor is one worker.
 type Processor struct {
 	queue    queue.Consumer
 	pipeline *Pipeline
 	events   EventWriter
+	alerts   AlertPublisher
 	opts     Options
 	log      *slog.Logger
 }
 
-// New builds a Processor.
-func New(q queue.Consumer, pipeline *Pipeline, events EventWriter, opts Options, log *slog.Logger) *Processor {
+// New builds a Processor. alerts may be nil, in which case no alert signals are
+// emitted — the event-writing path is unaffected.
+func New(q queue.Consumer, pipeline *Pipeline, events EventWriter, alerts AlertPublisher, opts Options, log *slog.Logger) *Processor {
 	if opts.BatchSize <= 0 {
 		opts = DefaultOptions()
 	}
-	return &Processor{queue: q, pipeline: pipeline, events: events, opts: opts, log: log}
+	return &Processor{queue: q, pipeline: pipeline, events: events, alerts: alerts, opts: opts, log: log}
 }
 
 // Run drains the queue until ctx is cancelled.
@@ -116,6 +126,8 @@ func (p *Processor) handle(ctx context.Context, messages []queue.Message) {
 	// ackable are messages that are done with — successfully processed, or
 	// permanently undeliverable. Both must be acked, or they come back forever.
 	ackable := make([]string, 0, len(messages))
+	// signals are the alerts to raise, held until the write below succeeds.
+	var signals []ingest.AlertSignal
 
 	var newIssues, regressions int
 
@@ -159,14 +171,19 @@ func (p *Processor) handle(ctx context.Context, messages []queue.Message) {
 		rows = append(rows, processed.Row)
 		ackable = append(ackable, msg.ID)
 
+		// Collect alert signals but do NOT publish them yet: an alert must only
+		// fire for an event we actually persisted, so publishing waits until the
+		// ClickHouse write below succeeds.
 		if processed.New {
 			newIssues++
+			signals = append(signals, alertFor(ingest.AlertNewIssue, job, processed))
 		}
 		if processed.Regressed {
 			regressions++
 			p.log.Info("issue regressed",
 				slog.Uint64("issue_id", processed.IssueID),
 				slog.Uint64("project_id", job.ProjectID))
+			signals = append(signals, alertFor(ingest.AlertRegression, job, processed))
 		}
 	}
 
@@ -181,6 +198,13 @@ func (p *Processor) handle(ctx context.Context, messages []queue.Message) {
 		}
 	}
 
+	// Now that the events are durably written, raise their alert signals. This
+	// is best-effort: the events are safe, and failing the batch because an
+	// alert could not be enqueued would redeliver and re-write them, trading a
+	// missed notification for a duplicate event. A missed notification is the
+	// lesser harm.
+	p.publishAlerts(ctx, signals)
+
 	if err := p.queue.Ack(ctx, ackable...); err != nil {
 		// The rows are written but the ack failed. They will be redelivered and
 		// written again — a duplicate row, not a lost event. Given the choice,
@@ -194,6 +218,46 @@ func (p *Processor) handle(ctx context.Context, messages []queue.Message) {
 		slog.Int("rows", len(rows)),
 		slog.Int("new_issues", newIssues),
 		slog.Int("regressions", regressions))
+}
+
+// alertFor builds an alert signal from a processed event, carrying everything
+// the alerter needs so it never has to query back.
+func alertFor(kind ingest.AlertKind, job ingest.Job, p Processed) ingest.AlertSignal {
+	return ingest.AlertSignal{
+		Kind:        kind,
+		ProjectID:   job.ProjectID,
+		IssueID:     p.IssueID,
+		GroupHash:   grouping.Hex(p.Row.GroupHash),
+		Title:       p.Title,
+		Culprit:     p.Row.Culprit,
+		Level:       p.Row.Level,
+		Release:     p.Row.Release,
+		Environment: p.Row.Environment,
+		At:          p.Row.Timestamp,
+	}
+}
+
+// publishAlerts enqueues the batch's signals. Best-effort by contract: the
+// events are already durable, so a failure here costs a notification, never data.
+func (p *Processor) publishAlerts(ctx context.Context, signals []ingest.AlertSignal) {
+	if p.alerts == nil || len(signals) == 0 {
+		return
+	}
+
+	bodies := make([][]byte, 0, len(signals))
+	for _, sig := range signals {
+		body, err := ingest.EncodeAlert(sig)
+		if err != nil {
+			p.log.Error("encode alert signal", slog.Any("error", err))
+			continue
+		}
+		bodies = append(bodies, body)
+	}
+
+	if err := p.alerts.Publish(ctx, bodies...); err != nil {
+		p.log.Error("publish alert signals; notification may be missed",
+			slog.Int("count", len(bodies)), slog.Any("error", err))
+	}
 }
 
 // reclaim takes over messages a crashed worker never acked. Without this, a

@@ -64,7 +64,7 @@ tidy:
 ## dev: bring the stack up and migrate it — one command from clean checkout
 dev: up migrate
 
-.PHONY: help up down reset logs migrate migrate-status build test lint fmt tidy dev seed gateway processor api
+.PHONY: help up down reset logs migrate migrate-status build test lint fmt tidy dev seed gateway processor api alerter
 
 ## seed: create an org, project and ingest key; print the ingest URL
 seed:
@@ -81,3 +81,7 @@ processor:
 ## api: run the dashboard API
 api:
 	go run ./cmd/api
+
+## alerter: run the alert evaluation service
+alerter:
+	go run ./cmd/alerter

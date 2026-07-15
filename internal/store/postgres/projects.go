@@ -107,3 +107,41 @@ func (db *DB) ProjectsForUser(ctx context.Context, userID uint64) ([]Project, er
 	}
 	return projects, rows.Err()
 }
+
+// ProjectByID loads a project by id. Used by the alerter to name a project in a
+// notification.
+func (db *DB) ProjectByID(ctx context.Context, projectID uint64) (Project, error) {
+	const query = `SELECT id, org_id, slug, name, platform FROM projects WHERE id = $1`
+	var p Project
+	err := db.QueryRow(ctx, query, projectID).Scan(&p.ID, &p.OrgID, &p.Slug, &p.Name, &p.Platform)
+	if err != nil {
+		if isNoRows(err) {
+			return Project{}, ErrNotFound
+		}
+		return Project{}, fmt.Errorf("get project: %w", err)
+	}
+	return p, nil
+}
+
+// ProjectIDsWithEnabledRules returns the projects that have at least one enabled
+// rule of a kind. The frequency evaluator uses it to skip projects with no
+// frequency rules rather than scanning every project's events.
+func (db *DB) ProjectIDsWithEnabledRules(ctx context.Context, kind string) ([]uint64, error) {
+	const query = `
+		SELECT DISTINCT project_id FROM alert_rules WHERE kind = $1 AND enabled = true`
+	rows, err := db.Query(ctx, query, kind)
+	if err != nil {
+		return nil, fmt.Errorf("list projects with rules: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []uint64
+	for rows.Next() {
+		var id uint64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan project id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

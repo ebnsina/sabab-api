@@ -223,3 +223,37 @@ func (db *DB) recordActivity(ctx context.Context, issueID uint64, userID *uint64
 	}
 	return nil
 }
+
+// IssuesByGroupHashes resolves group hashes to their issues, for a project. The
+// frequency evaluator uses it to turn "these hashes are spiking" into issues it
+// can name in an alert.
+func (db *DB) IssuesByGroupHashes(ctx context.Context, projectID uint64, hashes []string) (map[string]Issue, error) {
+	if len(hashes) == 0 {
+		return map[string]Issue{}, nil
+	}
+	const query = `
+		SELECT id, project_id, group_hash, title, culprit, level, status,
+		       first_seen, last_seen, times_seen, users_affected,
+		       COALESCE(first_release, ''), COALESCE(resolved_in_release, ''),
+		       assignee_id, snooze_until
+		FROM issues
+		WHERE project_id = $1 AND group_hash = ANY($2)`
+
+	rows, err := db.Query(ctx, query, projectID, hashes)
+	if err != nil {
+		return nil, fmt.Errorf("resolve issues by hash: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]Issue, len(hashes))
+	for rows.Next() {
+		var i Issue
+		if err := rows.Scan(&i.ID, &i.ProjectID, &i.GroupHash, &i.Title, &i.Culprit, &i.Level, &i.Status,
+			&i.FirstSeen, &i.LastSeen, &i.TimesSeen, &i.UsersAffected,
+			&i.FirstRelease, &i.ResolvedInRelease, &i.AssigneeID, &i.SnoozeUntil); err != nil {
+			return nil, fmt.Errorf("scan issue: %w", err)
+		}
+		out[i.GroupHash] = i
+	}
+	return out, rows.Err()
+}
