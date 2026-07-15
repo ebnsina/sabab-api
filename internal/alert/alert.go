@@ -173,6 +173,44 @@ type conditions struct {
 	// Frequency fields.
 	Threshold     uint64 `json:"threshold"`
 	WindowMinutes int    `json:"window_minutes"`
+	// Metric fields: fire when Agg(MetricName) over WindowMinutes is Operator
+	// than Value — e.g. p95(api.latency) gt 500.
+	MetricName string  `json:"metric_name"`
+	Agg        string  `json:"agg"`
+	Operator   string  `json:"operator"` // gt | lt | gte | lte
+	Value      float64 `json:"value"`
+}
+
+// breached reports whether an observed value trips this rule's operator/value.
+func (c conditions) breached(observed float64) bool {
+	switch c.Operator {
+	case "gt":
+		return observed > c.Value
+	case "gte":
+		return observed >= c.Value
+	case "lt":
+		return observed < c.Value
+	case "lte":
+		return observed <= c.Value
+	default:
+		return false
+	}
+}
+
+// operatorSymbol renders the operator for a human-readable alert line.
+func operatorSymbol(op string) string {
+	switch op {
+	case "gt":
+		return ">"
+	case "gte":
+		return "≥"
+	case "lt":
+		return "<"
+	case "lte":
+		return "≤"
+	default:
+		return op
+	}
 }
 
 func parseConditions(raw json.RawMessage) (conditions, error) {

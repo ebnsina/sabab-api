@@ -90,8 +90,11 @@ func run(ctx context.Context) error {
 		slog.String("group", cfg.Alerter.ConsumerGroup),
 		slog.Duration("frequency_interval", cfg.Alerter.FrequencyInterval))
 
-	// The frequency timer runs alongside the signal loop.
+	// The frequency and metric timers run alongside the signal loop, on the same
+	// cadence — both are "look back over a window" questions the stream cannot
+	// answer.
 	go runFrequency(ctx, engine, pg, ch, cfg.Alerter.FrequencyInterval, log)
+	go runMetrics(ctx, engine, pg, ch, cfg.Alerter.FrequencyInterval, log)
 
 	return consumeSignals(ctx, consumer, engine, log)
 }
@@ -160,6 +163,32 @@ func runFrequency(ctx context.Context, engine *alert.Engine, pg *postgres.DB, ch
 			}
 		}
 	}
+}
+
+// runMetrics evaluates metric-threshold rules on a timer.
+func runMetrics(ctx context.Context, engine *alert.Engine, pg *postgres.DB, ch *clickhouse.DB, interval time.Duration, log *slog.Logger) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	reader := clickhouseMetricReader{ch}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			if err := engine.EvaluateMetrics(ctx, pg, reader, now.UTC()); err != nil {
+				log.Error("metric evaluation", slog.Any("error", err))
+			}
+		}
+	}
+}
+
+// clickhouseMetricReader adapts *clickhouse.DB to alert.MetricReader.
+type clickhouseMetricReader struct{ db *clickhouse.DB }
+
+func (r clickhouseMetricReader) AggregateMetric(ctx context.Context, projectID uint64, name, agg string, from, to time.Time, rollup string) (float64, bool, error) {
+	return r.db.AggregateMetric(ctx, projectID, name, agg, from, to, rollup)
 }
 
 // clickhouseCounter adapts *clickhouse.DB to alert.EventCounter, translating the

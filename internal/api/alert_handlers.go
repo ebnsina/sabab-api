@@ -10,12 +10,53 @@ import (
 	"github.com/ebnsina/sabab-api/internal/store/postgres"
 )
 
-// validAlertKinds are the rule kinds the UI may create. metric is reserved for
-// M4, so it is rejected here rather than silently accepted and never evaluated.
+// validAlertKinds are the rule kinds the UI may create.
 var validAlertKinds = map[string]bool{
 	"new_issue":  true,
 	"regression": true,
 	"frequency":  true,
+	"metric":     true,
+}
+
+// validMetricAggs are the aggregations a metric rule may threshold on — the same
+// fixed set the rollup reader serves.
+var validMetricAggs = map[string]bool{
+	"sum": true, "count": true, "avg": true, "min": true, "max": true,
+	"uniq": true, "p50": true, "p75": true, "p95": true, "p99": true,
+}
+
+var validMetricOperators = map[string]bool{"gt": true, "gte": true, "lt": true, "lte": true}
+
+// metricConditions is the subset of a rule's conditions a metric rule requires.
+type metricConditions struct {
+	MetricName    string  `json:"metric_name"`
+	Agg           string  `json:"agg"`
+	Operator      string  `json:"operator"`
+	Value         float64 `json:"value"`
+	WindowMinutes int     `json:"window_minutes"`
+}
+
+// validateMetricRule checks a metric rule's conditions at create time, so a rule
+// that could never evaluate is rejected up front rather than skipped silently by
+// the alerter every tick.
+func validateMetricRule(raw json.RawMessage) error {
+	var c metricConditions
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return httpx.NewError(http.StatusBadRequest, "bad_rule", "conditions is not valid JSON.")
+		}
+	}
+	switch {
+	case c.MetricName == "":
+		return httpx.NewError(http.StatusBadRequest, "bad_rule", "A metric rule needs a metric name.")
+	case !validMetricAggs[c.Agg]:
+		return httpx.NewError(http.StatusBadRequest, "bad_rule", "agg must be one of sum, count, avg, min, max, uniq, p50, p75, p95, p99.")
+	case !validMetricOperators[c.Operator]:
+		return httpx.NewError(http.StatusBadRequest, "bad_rule", "operator must be gt, gte, lt or lte.")
+	case c.WindowMinutes <= 0:
+		return httpx.NewError(http.StatusBadRequest, "bad_rule", "window_minutes must be greater than zero.")
+	}
+	return nil
 }
 
 func (a *API) handleListAlertRules(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -68,8 +109,14 @@ func (a *API) handleCreateAlertRule(w http.ResponseWriter, r *http.Request, user
 	}
 	if !validAlertKinds[req.Kind] {
 		httpx.WriteError(w, r, a.log, httpx.NewError(http.StatusBadRequest, "bad_rule",
-			"kind must be new_issue, regression or frequency."))
+			"kind must be new_issue, regression, frequency or metric."))
 		return
+	}
+	if req.Kind == "metric" {
+		if err := validateMetricRule(req.Conditions); err != nil {
+			httpx.WriteError(w, r, a.log, err)
+			return
+		}
 	}
 	// A rule with no channels can never notify anyone — reject it rather than
 	// let someone believe they are covered when they are not.

@@ -148,6 +148,50 @@ func (db *DB) QueryMetric(ctx context.Context, q MetricQuery) ([]MetricPoint, er
 	return out, rows.Err()
 }
 
+// AggregateMetric reduces a metric to ONE value over the whole window, merging
+// the rollup's aggregate states across every bucket with no per-bucket grouping.
+// That makes "p95 over the last 5 minutes" the true window percentile — not an
+// average of per-minute p95s, which would be wrong — which is exactly what a
+// metric alert must compare against its threshold. The bool is false when the
+// window held no data (so a rule does not fire on an absent metric).
+func (db *DB) AggregateMetric(ctx context.Context, projectID uint64, name, agg string, from, to time.Time, rollup string) (float64, bool, error) {
+	table, timeCol := "metrics_1m", "minute"
+	if rollup == "1h" {
+		table, timeCol = "metrics_1h", "hour"
+	}
+
+	valueExpr, ok := metricAgg(strings.ToLower(strings.TrimSpace(agg)))
+	if !ok {
+		return 0, false, fmt.Errorf("unknown aggregation %q", agg)
+	}
+
+	// count() rides along so an empty window (aggregates default to 0) is
+	// distinguishable from a genuine zero.
+	sql := fmt.Sprintf(`
+		SELECT %s AS v, count() AS n
+		FROM %s
+		WHERE project_id = ? AND name = ? AND %s >= ? AND %s < ?`,
+		valueExpr, table, timeCol, timeCol)
+
+	rows, err := db.Query(ctx, sql, projectID, name, from, to)
+	if err != nil {
+		return 0, false, fmt.Errorf("aggregate metric: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return 0, false, rows.Err()
+	}
+	var (
+		v float64
+		n uint64
+	)
+	if err := rows.Scan(&v, &n); err != nil {
+		return 0, false, fmt.Errorf("scan metric aggregate: %w", err)
+	}
+	return v, n > 0, rows.Err()
+}
+
 // metricAgg maps a requested aggregation to its ClickHouse merge expression over
 // the rollup's AggregateFunction state columns. A percentile pulls the single
 // quantile out of the merged quantiles state.
