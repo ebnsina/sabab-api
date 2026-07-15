@@ -222,6 +222,70 @@ func (db *DB) SlowQueries(ctx context.Context, projectID uint64, from, to time.T
 	return out, rows.Err()
 }
 
+// NPlusOne is one repeated-query pattern: a statement run many times under a
+// single parent span in the same trace — the classic N+1, where code loads a
+// list and then queries once per row instead of once for all.
+type NPlusOne struct {
+	Statement string `json:"statement"`
+	DBSystem  string `json:"db_system"`
+	// Occurrences is how many (trace, parent) groups exhibited the pattern.
+	Occurrences uint64 `json:"occurrences"`
+	// MaxRepeats/AvgRepeats are the worst and typical fan-out — 50 identical
+	// queries under one parent is a worse smell than 6.
+	MaxRepeats uint64  `json:"max_repeats"`
+	AvgRepeats float64 `json:"avg_repeats"`
+	// SampleTrace is the worst offender, to open in the waterfall.
+	SampleTrace uuid.UUID `json:"sample_trace"`
+}
+
+// NPlusOneQueries finds repeated-query patterns: within one trace, a parent span
+// with at least `threshold` child db.query spans running the identical
+// statement. That fan-out is the signature of an N+1, and it is invisible in a
+// per-query average — each query is fast; it is the count that hurts.
+func (db *DB) NPlusOneQueries(ctx context.Context, projectID uint64, from, to time.Time, threshold, limit int) ([]NPlusOne, error) {
+	if threshold < 2 {
+		threshold = 2
+	}
+	// Inner: how many times each statement repeats under one parent in one trace.
+	// Outer: roll those groups up per statement across all traces.
+	const q = `
+		SELECT
+			db_statement,
+			any(db_system) AS db_system,
+			count() AS occurrences,
+			max(repeats) AS max_repeats,
+			avg(repeats) AS avg_repeats,
+			argMax(trace_id, repeats) AS sample_trace
+		FROM (
+			SELECT trace_id, parent_span_id, db_statement,
+			       any(db_system) AS db_system, count() AS repeats
+			FROM spans
+			WHERE project_id = ? AND op = 'db.query' AND db_statement != '' AND parent_span_id != 0
+			  AND timestamp >= ? AND timestamp < ?
+			GROUP BY trace_id, parent_span_id, db_statement
+			HAVING repeats >= ?
+		)
+		GROUP BY db_statement
+		ORDER BY max_repeats DESC, occurrences DESC
+		LIMIT ?`
+
+	rows, err := db.Query(ctx, q, projectID, from, to, threshold, min(max(limit, 1), 50))
+	if err != nil {
+		return nil, fmt.Errorf("query n+1: %w", err)
+	}
+	defer rows.Close()
+
+	var out []NPlusOne
+	for rows.Next() {
+		var n NPlusOne
+		if err := rows.Scan(&n.Statement, &n.DBSystem, &n.Occurrences, &n.MaxRepeats, &n.AvgRepeats, &n.SampleTrace); err != nil {
+			return nil, fmt.Errorf("scan n+1: %w", err)
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
 // ns converts nanoseconds to milliseconds for the wire — the dashboard thinks in
 // ms, and JSON floats keep the fractional part a percentile needs.
 func ns(nanos float64) float64 { return nanos / 1e6 }

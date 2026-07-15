@@ -95,3 +95,29 @@ func (a *API) handleSlowQueries(w http.ResponseWriter, r *http.Request, user aut
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"queries": queries})
 }
+
+// nPlusOneThreshold is the minimum fan-out (identical queries under one parent)
+// that counts as an N+1 pattern. Below this it is likely deliberate, not a smell.
+const nPlusOneThreshold = 5
+
+// handleNPlusOne surfaces repeated-query (N+1) patterns.
+func (a *API) handleNPlusOne(w http.ResponseWriter, r *http.Request, user auth.User) {
+	ctx := r.Context()
+	projectID, err := pathUint(r, "project_id")
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	if err := a.authorizeProject(ctx, user, projectID); err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+
+	from, to := timeRange(r)
+	patterns, err := a.ch.NPlusOneQueries(ctx, projectID, from, to, nPlusOneThreshold, 50)
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"patterns": patterns, "threshold": nPlusOneThreshold})
+}
