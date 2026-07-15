@@ -1,0 +1,173 @@
+/*
+ * Sabab design system.
+ *
+ * Dark-first, because this is a tool people open at 2am when something is on
+ * fire — a bright white screen is hostile in that moment. The palette is a cool
+ * slate with a single warm signal colour (amber) reserved for "this needs your
+ * attention", so severity reads at a glance without a legend.
+ */
+
+:root {
+	color-scheme: dark;
+
+	/* Surfaces, darkest to lightest. */
+	--bg: #0b0e14;
+	--surface: #12161f;
+	--surface-2: #1a2029;
+	--surface-3: #232b37;
+	--border: #2b3441;
+	--border-strong: #3a4552;
+
+	/* Text. */
+	--text: #e6eaf0;
+	--text-dim: #9aa5b4;
+	--text-faint: #6b7686;
+
+	/* Brand + signal. Amber is the attention colour, used sparingly. */
+	--accent: #f5a623;
+	--accent-dim: #a9741a;
+
+	/* Severity. These map to the level enum and are the ONE place the mapping
+	   is defined — components reference the variable, never a raw hex. */
+	--level-fatal: #f04a6e;
+	--level-error: #f0663f;
+	--level-warning: #f5a623;
+	--level-info: #4a9df0;
+	--level-debug: #6b7686;
+
+	--ok: #3fce8f;
+	--danger: #f04a6e;
+
+	--radius: 8px;
+	--radius-sm: 5px;
+	--mono: 'SFMono-Regular', ui-monospace, 'JetBrains Mono', 'Menlo', monospace;
+	--sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif;
+
+	--shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--sans);
+	font-size: 14px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+
+a {
+	color: inherit;
+	text-decoration: none;
+}
+
+button {
+	font-family: inherit;
+	cursor: pointer;
+}
+
+h1,
+h2,
+h3 {
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	margin: 0;
+}
+
+code,
+.mono {
+	font-family: var(--mono);
+	font-size: 0.92em;
+}
+
+/* Buttons ------------------------------------------------------------------ */
+
+.btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 7px 14px;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--border-strong);
+	background: var(--surface-2);
+	color: var(--text);
+	font-size: 13px;
+	font-weight: 500;
+	transition: background 0.12s, border-color 0.12s;
+}
+.btn:hover {
+	background: var(--surface-3);
+	border-color: var(--text-faint);
+}
+.btn-primary {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: #1a1206;
+	font-weight: 600;
+}
+.btn-primary:hover {
+	background: #ffb840;
+	border-color: #ffb840;
+}
+.btn-ghost {
+	background: transparent;
+	border-color: transparent;
+}
+.btn-ghost:hover {
+	background: var(--surface-2);
+	border-color: var(--border);
+}
+
+/* Inputs ------------------------------------------------------------------- */
+
+.input {
+	width: 100%;
+	padding: 9px 12px;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--border);
+	background: var(--surface);
+	color: var(--text);
+	font-size: 14px;
+	font-family: inherit;
+}
+.input:focus {
+	outline: none;
+	border-color: var(--accent-dim);
+	box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.12);
+}
+.input::placeholder {
+	color: var(--text-faint);
+}
+
+/* Cards -------------------------------------------------------------------- */
+
+.card {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+}
+
+/* Utility ------------------------------------------------------------------ */
+
+.muted {
+	color: var(--text-dim);
+}
+.faint {
+	color: var(--text-faint);
+}
+.row {
+	display: flex;
+	align-items: center;
+}
+.gap-sm {
+	gap: 8px;
+}
+.gap {
+	gap: 16px;
+}

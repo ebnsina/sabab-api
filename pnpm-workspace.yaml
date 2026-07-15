@@ -4,7 +4,7 @@ packages:
   # only way data can reach us. They ship with M1.
   - "sdk/js/*"
   # The SvelteKit dashboard.
-  - "web"
+  - "sabab-web"
   # Runnable apps we test against — the demo app is the M1 acceptance test.
   - "examples/*"
 # esbuild ships a platform-specific binary and needs its postinstall to run.
