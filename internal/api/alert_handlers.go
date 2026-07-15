@@ -4,11 +4,69 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/ebnsina/sabab-api/internal/auth"
 	"github.com/ebnsina/sabab-api/internal/httpx"
+	"github.com/ebnsina/sabab-api/internal/notify"
 	"github.com/ebnsina/sabab-api/internal/store/postgres"
 )
+
+// handleTestAlertRule sends a test notification through a rule's channels, so a
+// user can confirm a Slack webhook or email actually reaches them — before a
+// real incident is the first time they find out it does not.
+func (a *API) handleTestAlertRule(w http.ResponseWriter, r *http.Request, user auth.User) {
+	ctx := r.Context()
+	projectID, ruleID, ok := a.ruleParams(w, r, user)
+	if !ok {
+		return
+	}
+
+	rules, err := a.pg.ListAlertRules(ctx, projectID)
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	var rule *postgres.AlertRule
+	for i := range rules {
+		if rules[i].ID == ruleID {
+			rule = &rules[i]
+			break
+		}
+	}
+	if rule == nil {
+		httpx.WriteError(w, r, a.log, httpx.ErrNotFound)
+		return
+	}
+
+	var channels []notify.ChannelConfig
+	if err := json.Unmarshal(rule.Channels, &channels); err != nil || len(channels) == 0 {
+		httpx.WriteError(w, r, a.log, httpx.NewError(http.StatusBadRequest, "no_channels", "This rule has no channel to test."))
+		return
+	}
+
+	projectName := "your project"
+	if p, perr := a.pg.ProjectByID(ctx, projectID); perr == nil {
+		projectName = p.Name
+	}
+
+	results := a.dispatcher.Dispatch(ctx, channels, notify.Notification{
+		Reason:      "Test alert",
+		ProjectName: projectName,
+		Title:       rule.Name + " — this is a test",
+		FiredAt:     time.Now().UTC(),
+	})
+
+	out := make([]map[string]any, 0, len(results))
+	for _, res := range results {
+		item := map[string]any{"channel": res.Channel, "ok": res.Err == nil}
+		if res.Err != nil {
+			item["error"] = res.Err.Error()
+		}
+		out = append(out, item)
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"results": out})
+}
 
 // validAlertKinds are the rule kinds the UI may create.
 var validAlertKinds = map[string]bool{

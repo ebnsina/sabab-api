@@ -17,6 +17,7 @@ import (
 	"github.com/ebnsina/sabab-api/internal/config"
 	"github.com/ebnsina/sabab-api/internal/health"
 	"github.com/ebnsina/sabab-api/internal/logging"
+	"github.com/ebnsina/sabab-api/internal/notify"
 	"github.com/ebnsina/sabab-api/internal/store/clickhouse"
 	"github.com/ebnsina/sabab-api/internal/store/postgres"
 	"github.com/ebnsina/sabab-api/internal/version"
@@ -64,7 +65,17 @@ func run(ctx context.Context) error {
 		devOrigin = "http://localhost:5173" // the SvelteKit dev server
 	}
 
-	a := api.New(pg, ch, sessions, checker, devOrigin, cfg.IngestURL, log)
+	// The same senders the alerter uses, so a "send test" from the dashboard goes
+	// out exactly as a real alert would. Email falls back to logging when SMTP is
+	// unset, so a fresh self-host can still test an email channel.
+	dispatcher := notify.NewDispatcher(
+		notify.SlackSender{},
+		notify.DiscordSender{},
+		notify.WebhookSender{},
+		notify.NewEmailSender(cfg.SMTP, log),
+	)
+
+	a := api.New(pg, ch, sessions, checker, devOrigin, cfg.IngestURL, dispatcher, log)
 	go a.SweepSessions(ctx, time.Hour)
 
 	server := &http.Server{

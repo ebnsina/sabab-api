@@ -19,6 +19,7 @@ import (
 	"github.com/ebnsina/sabab-api/internal/auth"
 	"github.com/ebnsina/sabab-api/internal/health"
 	"github.com/ebnsina/sabab-api/internal/httpx"
+	"github.com/ebnsina/sabab-api/internal/notify"
 	"github.com/ebnsina/sabab-api/internal/store/clickhouse"
 	"github.com/ebnsina/sabab-api/internal/store/postgres"
 )
@@ -36,11 +37,14 @@ type API struct {
 	// ingestURL is the gateway's public base URL, used to build a project's DSN
 	// for the setup screen.
 	ingestURL string
+	// dispatcher sends a test notification through an alert rule's channels, so a
+	// user can confirm the channel works before relying on it.
+	dispatcher *notify.Dispatcher
 }
 
 // New builds the API.
-func New(pg *postgres.DB, ch *clickhouse.DB, sessions *auth.Sessions, checker *health.Checker, devOrigin, ingestURL string, log *slog.Logger) *API {
-	return &API{pg: pg, ch: ch, sessions: sessions, health: checker, devOrigin: devOrigin, ingestURL: ingestURL, log: log}
+func New(pg *postgres.DB, ch *clickhouse.DB, sessions *auth.Sessions, checker *health.Checker, devOrigin, ingestURL string, dispatcher *notify.Dispatcher, log *slog.Logger) *API {
+	return &API{pg: pg, ch: ch, sessions: sessions, health: checker, devOrigin: devOrigin, ingestURL: ingestURL, dispatcher: dispatcher, log: log}
 }
 
 // Handler returns the wired HTTP handler.
@@ -98,6 +102,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/projects/{project_id}/alert-rules", a.authenticated(a.handleCreateAlertRule))
 	mux.HandleFunc("DELETE /api/v1/projects/{project_id}/alert-rules/{rule_id}", a.authenticated(a.handleDeleteAlertRule))
 	mux.HandleFunc("POST /api/v1/projects/{project_id}/alert-rules/{rule_id}/toggle", a.authenticated(a.handleToggleAlertRule))
+	mux.HandleFunc("POST /api/v1/projects/{project_id}/alert-rules/{rule_id}/test", a.authenticated(a.handleTestAlertRule))
 
 	mux.HandleFunc("/", httpx.NotFound(a.log))
 
