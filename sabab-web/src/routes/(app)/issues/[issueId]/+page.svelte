@@ -5,17 +5,18 @@
 	import { fullTime, relativeTime, compactNumber } from '$lib/time';
 	import type { ExceptionValue, Breadcrumb } from '$lib/server/api';
 	import {
-		CheckCircle2,
-		EyeOff,
-		RotateCcw,
-		Users,
-		Hash,
-		Clock,
-		Tag,
-		Globe,
-		Monitor,
-		ArrowLeft
-	} from '@lucide/svelte';
+		HugeiconsIcon,
+		ResolveIcon,
+		IgnoreIcon,
+		ReopenIcon,
+		UsersIcon,
+		ReleaseIcon,
+		ClockIcon,
+		TagIcon,
+		TraceIcon,
+		DeviceIcon,
+		BackIcon
+	} from '$lib/icons';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -40,7 +41,7 @@
 
 <div class="detail">
 	<a class="back" href="/projects/{data.issue.project_id}/issues">
-		<ArrowLeft size={14} /> Issues
+		<HugeiconsIcon icon={BackIcon} size={14} /> Issues
 	</a>
 
 	<header class="issue-header">
@@ -60,17 +61,17 @@
 			{#if data.issue.status === 'resolved'}
 				<form method="POST" action="?/status" use:enhance>
 					<input type="hidden" name="status" value="unresolved" />
-					<button class="btn"><RotateCcw size={14} /> Reopen</button>
+					<button class="btn"><HugeiconsIcon icon={ReopenIcon} size={14} /> Reopen</button>
 				</form>
 			{:else}
 				<form method="POST" action="?/status" use:enhance>
 					<input type="hidden" name="status" value="resolved" />
 					<input type="hidden" name="release" value={data.event?.release ?? ''} />
-					<button class="btn btn-primary"><CheckCircle2 size={14} /> Resolve</button>
+					<button class="btn btn-primary"><HugeiconsIcon icon={ResolveIcon} size={14} /> Resolve</button>
 				</form>
 				<form method="POST" action="?/status" use:enhance>
 					<input type="hidden" name="status" value="ignored" />
-					<button class="btn"><EyeOff size={14} /> Ignore</button>
+					<button class="btn"><HugeiconsIcon icon={IgnoreIcon} size={14} /> Ignore</button>
 				</form>
 			{/if}
 		</div>
@@ -82,24 +83,24 @@
 			<span class="stat-value">{compactNumber(data.issue.times_seen)}</span>
 		</div>
 		<div class="stat">
-			<span class="stat-label"><Users size={12} /> Users</span>
+			<span class="stat-label"><HugeiconsIcon icon={UsersIcon} size={12} /> Users</span>
 			<span class="stat-value">{compactNumber(data.issue.users_affected)}</span>
 		</div>
 		<div class="stat">
-			<span class="stat-label"><Clock size={12} /> First seen</span>
+			<span class="stat-label"><HugeiconsIcon icon={ClockIcon} size={12} /> First seen</span>
 			<span class="stat-value" title={fullTime(data.issue.first_seen)}>
 				{relativeTime(data.issue.first_seen)} ago
 			</span>
 		</div>
 		<div class="stat">
-			<span class="stat-label"><Clock size={12} /> Last seen</span>
+			<span class="stat-label"><HugeiconsIcon icon={ClockIcon} size={12} /> Last seen</span>
 			<span class="stat-value" title={fullTime(data.issue.last_seen)}>
 				{relativeTime(data.issue.last_seen)} ago
 			</span>
 		</div>
 		{#if data.issue.first_release}
 			<div class="stat">
-				<span class="stat-label"><Hash size={12} /> Release</span>
+				<span class="stat-label"><HugeiconsIcon icon={ReleaseIcon} size={12} /> Release</span>
 				<span class="stat-value mono">{data.issue.first_release}</span>
 			</div>
 		{/if}
@@ -144,19 +145,19 @@
 							<dd>{data.event.environment}</dd>
 						{/if}
 						{#if data.event.user_id || data.event.user_email}
-							<dt><Users size={12} /> User</dt>
+							<dt><HugeiconsIcon icon={UsersIcon} size={12} /> User</dt>
 							<dd>{data.event.user_email || data.event.user_id}</dd>
 						{/if}
 						{#if data.event.browser}
-							<dt><Monitor size={12} /> Browser</dt>
+							<dt><HugeiconsIcon icon={DeviceIcon} size={12} /> Browser</dt>
 							<dd>{data.event.browser}</dd>
 						{/if}
 						{#if data.event.os}
-							<dt><Monitor size={12} /> OS</dt>
+							<dt><HugeiconsIcon icon={DeviceIcon} size={12} /> OS</dt>
 							<dd>{data.event.os}</dd>
 						{/if}
 						{#if data.event.trace_id && !data.event.trace_id.startsWith('00000000')}
-							<dt><Globe size={12} /> Trace</dt>
+							<dt><HugeiconsIcon icon={TraceIcon} size={12} /> Trace</dt>
 							<dd class="mono trace">{data.event.trace_id}</dd>
 						{/if}
 					</dl>
@@ -165,7 +166,7 @@
 
 			{#if Object.keys(tags).length > 0}
 				<section class="panel">
-					<h2 class="panel-title"><Tag size={13} /> Tags</h2>
+					<h2 class="panel-title"><HugeiconsIcon icon={TagIcon} size={13} /> Tags</h2>
 					<div class="tags">
 						{#each Object.entries(tags) as [key, value] (key)}
 							<div class="tag">

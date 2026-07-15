@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { AlertTriangle, Home } from '@lucide/svelte';
+	import { HugeiconsIcon, AlertIcon, HomeIcon } from '$lib/icons';
 
 	// The message and status come from whatever `error()` was thrown — a 404 from
 	// a missing issue, a 503 from an API outage. We show the real one rather than
@@ -13,10 +13,10 @@
 <svelte:head><title>{status} · Sabab</title></svelte:head>
 
 <div class="error-page">
-	<AlertTriangle size={36} color="var(--level-warning)" />
+	<HugeiconsIcon icon={AlertIcon} size={36} color="var(--level-warning)" strokeWidth={1.8} />
 	<div class="code">{status}</div>
 	<p class="message">{message}</p>
-	<a class="btn" href="/"><Home size={15} /> Back to issues</a>
+	<a class="btn" href="/"><HugeiconsIcon icon={HomeIcon} size={15} /> Back to issues</a>
 </div>
 
 <style>

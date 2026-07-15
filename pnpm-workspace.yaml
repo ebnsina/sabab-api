@@ -11,4 +11,5 @@ packages:
 # It is a build-time dependency of the SDKs only; nothing it does reaches
 # production or a customer's bundle.
 allowBuilds:
+  '@hugeicons/svelte': set this to true or false
   esbuild: true

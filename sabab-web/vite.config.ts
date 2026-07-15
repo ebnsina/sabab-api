@@ -16,5 +16,11 @@ export default defineConfig({
 			// See https://svelte.dev/docs/kit/adapters for more information about adapters.
 			adapter: adapter()
 		})
-	]
+	],
+	ssr: {
+		// @hugeicons/svelte ships uncompiled .svelte files. Without this, Node's
+		// SSR loader tries to import them raw and throws "Unknown file extension
+		// .svelte" — noExternal makes Vite compile the package instead.
+		noExternal: ['@hugeicons/svelte']
+	}
 });

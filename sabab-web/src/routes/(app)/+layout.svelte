@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { Activity, Boxes, LogOut, CircleDot } from '@lucide/svelte';
+	import { HugeiconsIcon, BrandIcon, ProjectsIcon, LogoutIcon, ProjectDotIcon } from '$lib/icons';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } =
@@ -13,13 +13,13 @@
 <div class="shell">
 	<aside class="sidebar">
 		<a class="brand" href="/">
-			<Activity size={20} color="var(--accent)" />
+			<HugeiconsIcon icon={BrandIcon} size={20} color="var(--accent)" strokeWidth={2} />
 			<span>sabab</span>
 		</a>
 
 		<nav class="projects">
 			<div class="nav-label">
-				<Boxes size={13} /> Projects
+				<HugeiconsIcon icon={ProjectsIcon} size={13} /> Projects
 			</div>
 			{#each data.projects as project (project.id)}
 				<a
@@ -27,7 +27,7 @@
 					class:active={String(project.id) === activeProjectId}
 					href="/projects/{project.id}/issues"
 				>
-					<CircleDot size={13} />
+					<HugeiconsIcon icon={ProjectDotIcon} size={13} />
 					<span class="project-name">{project.name}</span>
 					<span class="project-platform faint">{project.platform}</span>
 				</a>
@@ -43,7 +43,7 @@
 			</div>
 			<form method="POST" action="/logout">
 				<button class="btn-ghost logout" title="Sign out" aria-label="Sign out">
-					<LogOut size={15} />
+					<HugeiconsIcon icon={LogoutIcon} size={15} />
 				</button>
 			</form>
 		</div>

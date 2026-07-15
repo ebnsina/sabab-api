@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { Activity, LoaderCircle } from '@lucide/svelte';
+	import { HugeiconsIcon, BrandIcon, SpinnerIcon } from '$lib/icons';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
@@ -12,7 +12,7 @@
 <div class="wrap">
 	<div class="card login">
 		<div class="brand">
-			<Activity size={22} color="var(--accent)" />
+			<HugeiconsIcon icon={BrandIcon} size={22} color="var(--accent)" strokeWidth={2} />
 			<span class="wordmark">sabab</span>
 		</div>
 		<p class="muted tagline">See what broke, why, and for whom.</p>
@@ -55,7 +55,9 @@
 			{/if}
 
 			<button class="btn btn-primary submit" type="submit" disabled={submitting}>
-				{#if submitting}<LoaderCircle size={15} class="spin" />{/if}
+				{#if submitting}
+					<span class="spin"><HugeiconsIcon icon={SpinnerIcon} size={15} /></span>
+				{/if}
 				Sign in
 			</button>
 		</form>
@@ -118,7 +120,8 @@
 		margin-top: 4px;
 		padding: 9px;
 	}
-	:global(.spin) {
+	.spin {
+		display: inline-flex;
 		animation: spin 0.7s linear infinite;
 	}
 	@keyframes spin {

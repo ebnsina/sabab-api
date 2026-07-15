@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { Inbox } from '@lucide/svelte';
+	import { HugeiconsIcon, EmptyIcon } from '$lib/icons';
 </script>
 
 <div class="empty-state">
-	<Inbox size={40} color="var(--text-faint)" />
+	<HugeiconsIcon icon={EmptyIcon} size={40} color="var(--text-faint)" strokeWidth={1.5} />
 	<h2>No projects yet</h2>
 	<p class="muted">Create a project and send your first event to get started.</p>
 </div>

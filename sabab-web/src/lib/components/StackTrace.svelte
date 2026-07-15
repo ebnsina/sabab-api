@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { ExceptionValue, Frame } from '$lib/server/api';
-	import { ChevronRight, ChevronDown } from '@lucide/svelte';
+	import { HugeiconsIcon, ChevronRightIcon, ChevronDownIcon } from '$lib/icons';
 
 	/**
 	 * The stack-trace viewer. This is the payoff of the whole pipeline: the frame
@@ -79,14 +79,14 @@
 
 			{#if hiddenCount(exc.frames, idx) > 0}
 				<button class="toggle" onclick={() => (expanded[idx] = true)}>
-					<ChevronRight size={13} />
+					<HugeiconsIcon icon={ChevronRightIcon} size={13} />
 					Show {hiddenCount(exc.frames, idx)} more frame{hiddenCount(exc.frames, idx) === 1
 						? ''
 						: 's'} from libraries
 				</button>
 			{:else if expanded[idx]}
 				<button class="toggle" onclick={() => (expanded[idx] = false)}>
-					<ChevronDown size={13} />
+					<HugeiconsIcon icon={ChevronDownIcon} size={13} />
 					Collapse library frames
 				</button>
 			{/if}

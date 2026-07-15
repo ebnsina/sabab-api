@@ -4,7 +4,15 @@
 	import LevelBadge from '$lib/components/LevelBadge.svelte';
 	import Sparkline from '$lib/components/Sparkline.svelte';
 	import { relativeTime, compactNumber } from '$lib/time';
-	import { Search, Users, Hash, CheckCircle2, Bell, EyeOff } from '@lucide/svelte';
+	import {
+		HugeiconsIcon,
+		SearchIcon,
+		UsersIcon,
+		ReleaseIcon,
+		ResolveIcon,
+		UnresolvedIcon,
+		IgnoreIcon
+	} from '$lib/icons';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -18,9 +26,9 @@
 	});
 
 	const statuses = [
-		{ key: 'unresolved', label: 'Unresolved', icon: Bell },
-		{ key: 'resolved', label: 'Resolved', icon: CheckCircle2 },
-		{ key: 'ignored', label: 'Ignored', icon: EyeOff }
+		{ key: 'unresolved', label: 'Unresolved', icon: UnresolvedIcon },
+		{ key: 'resolved', label: 'Resolved', icon: ResolveIcon },
+		{ key: 'ignored', label: 'Ignored', icon: IgnoreIcon }
 	];
 
 	const sorts = [
@@ -54,7 +62,7 @@
 		<h1>{data.project?.name ?? 'Issues'}</h1>
 
 		<form class="search" onsubmit={submitSearch}>
-			<Search size={15} color="var(--text-faint)" />
+			<HugeiconsIcon icon={SearchIcon} size={15} color="var(--text-faint)" />
 			<input
 				class="search-input"
 				bind:value={queryInput}
@@ -77,7 +85,7 @@
 					class:active={data.status === s.key}
 					onclick={() => navigate({ status: s.key })}
 				>
-					<s.icon size={13} />
+					<HugeiconsIcon icon={s.icon} size={13} />
 					{s.label}
 				</button>
 			{/each}
@@ -116,7 +124,9 @@
 					<div class="issue-meta">
 						{#if issue.culprit}<span class="mono culprit">{issue.culprit}</span>{/if}
 						{#if issue.first_release}
-							<span class="faint"><Hash size={11} />{issue.first_release}</span>
+							<span class="faint"
+								><HugeiconsIcon icon={ReleaseIcon} size={11} />{issue.first_release}</span
+							>
 						{/if}
 					</div>
 				</div>
@@ -126,7 +136,11 @@
 				<div class="col-num">{compactNumber(issue.times_seen)}</div>
 				<div class="col-num">
 					{#if issue.users_affected > 0}
-						<span class="users"><Users size={12} />{compactNumber(issue.users_affected)}</span>
+						<span class="users"
+							><HugeiconsIcon icon={UsersIcon} size={12} />{compactNumber(
+								issue.users_affected
+							)}</span
+						>
 					{:else}
 						<span class="faint">—</span>
 					{/if}

@@ -40,8 +40,12 @@
 
 	--radius: 8px;
 	--radius-sm: 5px;
-	--mono: 'SFMono-Regular', ui-monospace, 'JetBrains Mono', 'Menlo', monospace;
-	--sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif;
+	/* Mona Sans for UI, Geist Mono for code and identifiers. The system-font
+	   fallbacks matter: they hold the layout with metrically similar faces during
+	   the brief moment before the variable fonts load, so text does not reflow. */
+	--sans: 'Mona Sans Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
+		sans-serif;
+	--mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', 'Menlo', monospace;
 
 	--shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
