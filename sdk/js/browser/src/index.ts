@@ -5,6 +5,7 @@ import {
   type MetricOptions,
   type SababOptions,
 } from "@sabab/core";
+import { installWebVitals } from "./webvitals.js";
 
 /**
  * @sabab/browser — errors from the browser.
@@ -30,6 +31,10 @@ export function init(options: SababOptions): Client | undefined {
     installGlobalHandlers(c);
     installBreadcrumbs(c);
     installFlushOnHide(c);
+
+    // Web Vitals are on by default in the browser — the real-user experience is
+    // the whole point of a browser SDK. Opt out with { webVitals: false }.
+    if (options.webVitals !== false) installWebVitals(c);
 
     // Console capture is opt-in: it changes what the app's telemetry contains,
     // so we do not turn it on behind the user's back.

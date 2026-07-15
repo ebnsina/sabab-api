@@ -96,6 +96,10 @@ export interface SababOptions {
    *  own telemetry contains, so it is opt-in. */
   captureConsole?: boolean;
 
+  /** Collect Web Vitals (LCP, CLS, INP, FCP, TTFB) from the browser and report
+   *  them as metrics. On by default in the browser; set false to opt out. */
+  webVitals?: boolean;
+
   /** Drop a fraction of events. 1.0 keeps everything. */
   sampleRate?: number;
 
