@@ -80,6 +80,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/performance/transactions/samples", a.authenticated(a.handleTransactionSamples))
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/performance/queries", a.authenticated(a.handleSlowQueries))
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/performance/n-plus-one", a.authenticated(a.handleNPlusOne))
+	mux.HandleFunc("GET /api/v1/projects/{project_id}/performance/releases", a.authenticated(a.handleReleaseComparison))
 
 	// Alert rules.
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/alert-rules", a.authenticated(a.handleListAlertRules))

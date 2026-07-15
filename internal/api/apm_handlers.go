@@ -121,3 +121,25 @@ func (a *API) handleNPlusOne(w http.ResponseWriter, r *http.Request, user auth.U
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"patterns": patterns, "threshold": nPlusOneThreshold})
 }
+
+// handleReleaseComparison compares the newest release to the one before it.
+func (a *API) handleReleaseComparison(w http.ResponseWriter, r *http.Request, user auth.User) {
+	ctx := r.Context()
+	projectID, err := pathUint(r, "project_id")
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	if err := a.authorizeProject(ctx, user, projectID); err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+
+	from, to := timeRange(r)
+	cmp, err := a.ch.CompareReleases(ctx, projectID, from, to, 50)
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, cmp)
+}

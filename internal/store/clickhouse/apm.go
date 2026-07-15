@@ -286,6 +286,157 @@ func (db *DB) NPlusOneQueries(ctx context.Context, projectID uint64, from, to ti
 	return out, rows.Err()
 }
 
+// ReleaseDelta is one endpoint's before/after across two releases.
+type ReleaseDelta struct {
+	Name             string  `json:"name"`
+	CurrentP95MS     float64 `json:"current_p95_ms"`
+	PreviousP95MS    float64 `json:"previous_p95_ms"`
+	P95ChangePct     float64 `json:"p95_change_pct"` // (cur-prev)/prev, e.g. 0.45 = 45% slower
+	CurrentFailRate  float64 `json:"current_failure_rate"`
+	PreviousFailRate float64 `json:"previous_failure_rate"`
+	CurrentCount     uint64  `json:"current_count"`
+	// Regressed is true when the change is both large and meaningful — the flag a
+	// user scans for.
+	Regressed bool `json:"regressed"`
+}
+
+// ReleaseComparison is the current release measured against the one before it.
+type ReleaseComparison struct {
+	Current   string         `json:"current"`
+	Previous  string         `json:"previous"`
+	Endpoints []ReleaseDelta `json:"endpoints"`
+}
+
+// Regression thresholds: a change must clear BOTH a relative and an absolute bar
+// to count, so noise on a fast or low-traffic endpoint does not raise a flag.
+const (
+	p95RegressionPct   = 0.20       // 20% slower
+	p95RegressionAbsMS = 20.0       // and at least 20ms
+	failRegressionAbs  = 0.02       // 2 percentage points more errors
+	minReleaseSamples  = uint64(20) // ignore endpoints with too little traffic to trust
+)
+
+// CompareReleases measures each endpoint in the current release against the one
+// before it, flagging the ones that got slower or more error-prone. "Current" is
+// the release with the most recent traffic (max timestamp): after a deploy the
+// old release stops receiving requests while the new one keeps serving, so the
+// most-recently-active release is the one live now — no deploy feed needed.
+func (db *DB) CompareReleases(ctx context.Context, projectID uint64, from, to time.Time, limit int) (ReleaseComparison, error) {
+	// The two most recently active releases in the window.
+	const relQ = `
+		SELECT release
+		FROM spans
+		WHERE project_id = ? AND is_segment AND release != '' AND timestamp >= ? AND timestamp < ?
+		GROUP BY release
+		ORDER BY max(timestamp) DESC
+		LIMIT 2`
+	rows, err := db.Query(ctx, relQ, projectID, from, to)
+	if err != nil {
+		return ReleaseComparison{}, fmt.Errorf("list releases: %w", err)
+	}
+	var releases []string
+	for rows.Next() {
+		var r string
+		if err := rows.Scan(&r); err != nil {
+			rows.Close()
+			return ReleaseComparison{}, fmt.Errorf("scan release: %w", err)
+		}
+		releases = append(releases, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return ReleaseComparison{}, err
+	}
+	// Nothing to compare against with fewer than two releases.
+	if len(releases) < 2 {
+		return ReleaseComparison{}, nil
+	}
+	current, previous := releases[0], releases[1]
+
+	// Per-endpoint p95 and failure rate for each of the two releases, in one pass.
+	const q = `
+		SELECT name, release,
+			quantile(0.95)(duration_ns) AS p95,
+			countIf(status = 'error') / count() AS fail,
+			count() AS n
+		FROM spans
+		WHERE project_id = ? AND is_segment AND release IN (?, ?)
+		  AND timestamp >= ? AND timestamp < ?
+		GROUP BY name, release`
+	rows, err = db.Query(ctx, q, projectID, current, previous, from, to)
+	if err != nil {
+		return ReleaseComparison{}, fmt.Errorf("compare releases: %w", err)
+	}
+	defer rows.Close()
+
+	type stat struct {
+		p95Ms float64
+		fail  float64
+		count uint64
+	}
+	byName := map[string]map[string]stat{} // name -> release -> stat
+	for rows.Next() {
+		var (
+			name, release string
+			p95, fail     float64
+			n             uint64
+		)
+		if err := rows.Scan(&name, &release, &p95, &fail, &n); err != nil {
+			return ReleaseComparison{}, fmt.Errorf("scan release stat: %w", err)
+		}
+		if byName[name] == nil {
+			byName[name] = map[string]stat{}
+		}
+		byName[name][release] = stat{p95Ms: ns(p95), fail: fail, count: n}
+	}
+	if err := rows.Err(); err != nil {
+		return ReleaseComparison{}, err
+	}
+
+	out := ReleaseComparison{Current: current, Previous: previous}
+	for name, byRel := range byName {
+		cur, okCur := byRel[current]
+		prev, okPrev := byRel[previous]
+		// Only endpoints present in BOTH releases can be compared, and only with
+		// enough current traffic to trust the number.
+		if !okCur || !okPrev || cur.count < minReleaseSamples {
+			continue
+		}
+		var changePct float64
+		if prev.p95Ms > 0 {
+			changePct = (cur.p95Ms - prev.p95Ms) / prev.p95Ms
+		}
+		slower := changePct >= p95RegressionPct && (cur.p95Ms-prev.p95Ms) >= p95RegressionAbsMS
+		errier := (cur.fail - prev.fail) >= failRegressionAbs
+		out.Endpoints = append(out.Endpoints, ReleaseDelta{
+			Name:             name,
+			CurrentP95MS:     cur.p95Ms,
+			PreviousP95MS:    prev.p95Ms,
+			P95ChangePct:     changePct,
+			CurrentFailRate:  cur.fail,
+			PreviousFailRate: prev.fail,
+			CurrentCount:     cur.count,
+			Regressed:        slower || errier,
+		})
+	}
+	// Worst regression first: sort by p95 change descending.
+	sortByChangeDesc(out.Endpoints)
+	if limit > 0 && len(out.Endpoints) > limit {
+		out.Endpoints = out.Endpoints[:limit]
+	}
+	return out, nil
+}
+
+// sortByChangeDesc orders endpoints by p95 change, worst regression first. A tiny
+// insertion sort keeps the dependency footprint at zero; the list is short.
+func sortByChangeDesc(d []ReleaseDelta) {
+	for i := 1; i < len(d); i++ {
+		for j := i; j > 0 && d[j].P95ChangePct > d[j-1].P95ChangePct; j-- {
+			d[j], d[j-1] = d[j-1], d[j]
+		}
+	}
+}
+
 // ns converts nanoseconds to milliseconds for the wire — the dashboard thinks in
 // ms, and JSON floats keep the fractional part a percentile needs.
 func ns(nanos float64) float64 { return nanos / 1e6 }
