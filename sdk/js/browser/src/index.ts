@@ -1,4 +1,9 @@
-import { Client, type Level, type SababOptions } from "@sabab/core";
+import {
+  Client,
+  patchConsole,
+  type Level,
+  type SababOptions,
+} from "@sabab/core";
 
 /**
  * @sabab/browser — errors from the browser.
@@ -18,17 +23,27 @@ export function init(options: SababOptions): Client | undefined {
   if (client) return client;
 
   try {
-    client = new Client(options, SDK, "javascript", send);
+    const c = new Client(options, SDK, "javascript", send);
+    client = c;
 
-    installGlobalHandlers(client);
-    installBreadcrumbs(client);
-    installFlushOnHide(client);
+    installGlobalHandlers(c);
+    installBreadcrumbs(c);
+    installFlushOnHide(c);
 
-    client.setContext("browser", {
+    // Console capture is opt-in: it changes what the app's telemetry contains,
+    // so we do not turn it on behind the user's back.
+    if (options.captureConsole) {
+      patchConsole(
+        console as unknown as Record<string, (...args: unknown[]) => void>,
+        (record) => c.logger[record.severity](record.body),
+      );
+    }
+
+    c.setContext("browser", {
       name: browserName(),
       user_agent: navigator.userAgent,
     });
-    return client;
+    return c;
   } catch (err) {
     // Failing to initialise must not take the page down with it.
     if (options.debug) console.warn("[sabab] init failed", err);
@@ -64,6 +79,21 @@ export function addBreadcrumb(crumb: {
 export function flush(): Promise<boolean> {
   return client?.flush() ?? Promise.resolve(true);
 }
+
+/**
+ * The structured logger: Sabab.log.info("checkout started", { cartSize: 3 }).
+ *
+ * Safe to call before init — it no-ops until the SDK is running, so a log
+ * statement never throws just because init has not run yet.
+ */
+export const log = {
+  trace: (m: string, a?: Record<string, unknown>) => client?.logger.trace(m, a),
+  debug: (m: string, a?: Record<string, unknown>) => client?.logger.debug(m, a),
+  info: (m: string, a?: Record<string, unknown>) => client?.logger.info(m, a),
+  warn: (m: string, a?: Record<string, unknown>) => client?.logger.warn(m, a),
+  error: (m: string, a?: Record<string, unknown>) => client?.logger.error(m, a),
+  fatal: (m: string, a?: Record<string, unknown>) => client?.logger.fatal(m, a),
+};
 
 /**
  * The transport. fetch with keepalive, so a request survives the page starting

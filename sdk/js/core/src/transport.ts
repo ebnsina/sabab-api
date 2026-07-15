@@ -1,4 +1,5 @@
 import type { DiscardReason, Dsn, ErrorEvent } from "./types.js";
+import type { LogRecord } from "./logger.js";
 
 /**
  * The transport: buffer events, encode envelopes, send them, and be honest
@@ -30,10 +31,31 @@ const MAX_QUEUE = 30;
 /** How long a flush may take before we give up on it. */
 const TIMEOUT_MS = 5000;
 
-type Item = { type: "error"; payload: ErrorEvent };
+/**
+ * A queued item. Errors and logs share one queue and one envelope, so a crash
+ * and the logs around it flush together in a single request.
+ */
+/** A log as it goes on the wire — the LogRecord plus the context the client
+ *  stamps on. Matches the server's log payload shape. */
+export interface WireLog extends LogRecord {
+  service?: string;
+  environment?: string;
+  release?: string;
+  trace_id?: string;
+  span_id?: string;
+}
+
+type Item =
+  | { type: "error"; payload: ErrorEvent }
+  | { type: "log"; payload: WireLog };
+
+/** A queued item's signal category, for the client_report. */
+type Category = Item["type"];
 
 export class Transport {
   private queue: Item[] = [];
+  // Keyed by "reason|category" so the client_report can report, e.g., that we
+  // dropped 12 logs to queue_overflow separately from 3 errors.
   private discarded = new Map<string, number>();
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
   /** Set by a 429; we send nothing until it passes. */
@@ -51,29 +73,30 @@ export class Transport {
     private readonly send: (url: string, body: string, headers: Record<string, string>) => Promise<boolean>,
   ) {}
 
-  /** Queue an event. Returns false if it was dropped. */
-  enqueue(event: ErrorEvent): boolean {
+  /** Queue an item (error or log). Returns false if it was dropped. */
+  enqueue(item: Item): boolean {
     const now = Date.now();
     if (now < this.rateLimitedUntil) {
       // The server told us to back off. Honour it — hammering a 429 in a tight
       // loop is how an SDK turns a busy server into a dead one.
-      this.recordDiscard("ratelimit_backoff");
+      this.recordDiscard("ratelimit_backoff", item.type);
       return false;
     }
 
     if (this.queue.length >= MAX_QUEUE) {
-      this.recordDiscard("queue_overflow");
+      this.recordDiscard("queue_overflow", item.type);
       return false;
     }
 
-    this.queue.push({ type: "error", payload: event });
+    this.queue.push(item);
     this.scheduleFlush();
     return true;
   }
 
-  /** Count an event the caller dropped (sampling, beforeSend). */
-  recordDiscard(reason: DiscardReason): void {
-    this.discarded.set(reason, (this.discarded.get(reason) ?? 0) + 1);
+  /** Count an item the caller dropped (sampling, beforeSend, overflow). */
+  recordDiscard(reason: DiscardReason, category: Category = "error"): void {
+    const key = `${reason}|${category}`;
+    this.discarded.set(key, (this.discarded.get(key) ?? 0) + 1);
   }
 
   /**
@@ -163,7 +186,10 @@ export class Transport {
     if (this.discarded.size === 0) return null;
 
     const discarded_events = [...this.discarded.entries()].map(
-      ([reason, quantity]) => ({ reason, category: "error", quantity }),
+      ([key, quantity]) => {
+        const [reason, category] = key.split("|");
+        return { reason, category, quantity };
+      },
     );
     this.discarded.clear();
 

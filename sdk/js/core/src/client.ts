@@ -1,4 +1,5 @@
 import { parseDsn } from "./dsn.js";
+import { Logger, type LogRecord } from "./logger.js";
 import { exceptionsFromUnknown } from "./stack.js";
 import { Transport, type SdkInfo } from "./transport.js";
 import type {
@@ -32,6 +33,20 @@ export class Client {
   private breadcrumbs: Breadcrumb[] = [];
   private contexts: Record<string, unknown> = {};
 
+  /** The active trace context, stamped onto every log and error so a crash and
+   *  the logs around it share a trace_id. Set by the tracing SDK (M3); until
+   *  then it is whatever the host passes to setTrace. */
+  private traceId: string | undefined;
+  private spanId: string | undefined;
+
+  /**
+   * The log capture surface. Every captured log flows through here, gets the
+   * current trace context stamped on, and joins the same queue as errors — so a
+   * crash and its surrounding logs flush in one request and correlate on the
+   * dashboard.
+   */
+  readonly logger: Logger;
+
   constructor(
     options: SababOptions,
     sdk: SdkInfo,
@@ -46,6 +61,33 @@ export class Client {
       options.debug ?? false,
       send,
     );
+    this.logger = new Logger((record) => this.captureLog(record));
+  }
+
+  /** Set the active trace context. The tracing SDK calls this per request; it is
+   *  what makes "the logs inside this trace" answerable. */
+  setTrace(traceId: string | undefined, spanId?: string): void {
+    this.guard(() => {
+      this.traceId = traceId;
+      this.spanId = spanId;
+    });
+  }
+
+  /** Ingest one captured log: stamp the shared context and queue it. */
+  private captureLog(record: LogRecord): void {
+    this.guard(() => {
+      this.transport.enqueue({
+        type: "log",
+        payload: {
+          ...record,
+          service: this.options.serviceName || this.platform,
+          environment: this.options.environment ?? "production",
+          release: this.options.release,
+          trace_id: this.traceId,
+          span_id: this.spanId,
+        },
+      });
+    });
   }
 
   /** Attach the user. It is what turns "500 errors" into "3 users affected". */
@@ -156,7 +198,7 @@ export class Client {
       return;
     }
 
-    this.transport.enqueue(final);
+    this.transport.enqueue({ type: "error", payload: final });
   }
 
   /**

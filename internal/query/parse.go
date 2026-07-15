@@ -142,8 +142,37 @@ func coerce(kind Kind, raw string) (any, error) {
 	case KindTime:
 		return coerceTime(raw)
 
+	case KindSeverity:
+		n, ok := severityNumber(raw)
+		if !ok {
+			return nil, fmt.Errorf("%q is not a severity (trace, debug, info, warn, error, fatal)", raw)
+		}
+		return n, nil
+
 	default: // KindString, KindMap
 		return raw, nil
+	}
+}
+
+// severityNumber maps a log level name to its OpenTelemetry severity number,
+// which is what the Enum8 stores. Comparing against the number is what turns
+// "severity >= warn" into a range scan rather than an equality test.
+func severityNumber(raw string) (int, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "trace":
+		return 1, true
+	case "debug":
+		return 5, true
+	case "info":
+		return 9, true
+	case "warn", "warning":
+		return 13, true
+	case "error", "err":
+		return 17, true
+	case "fatal", "critical":
+		return 21, true
+	default:
+		return 0, false
 	}
 }
 

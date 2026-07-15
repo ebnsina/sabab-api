@@ -44,6 +44,14 @@ func normalize(job ingest.Job) (event.Item, error) {
 		item.Meta = mergeMeta(item.Meta, payload.meta(), job)
 		item.Error = payload.error()
 
+	case event.KindLog:
+		var payload logPayload
+		if err := json.Unmarshal(job.Payload, &payload); err != nil {
+			return event.Item{}, fmt.Errorf("decode log payload: %w", err)
+		}
+		item.Meta = mergeMeta(item.Meta, payload.meta(), job)
+		item.Log = payload.log()
+
 	default:
 		// Logs, spans, metrics, sessions and client reports are modelled but not
 		// yet ingested — they land in M2 through M4. Refusing them explicitly is

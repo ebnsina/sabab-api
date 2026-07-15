@@ -88,6 +88,14 @@ export interface SababOptions {
   release?: string;
   environment?: string;
 
+  /** The service name attached to logs, so a log view can filter by service.
+   *  Defaults to the platform ("javascript"/"node") when unset. */
+  serviceName?: string;
+
+  /** Capture console.* calls as logs. Off by default: it changes what the app's
+   *  own telemetry contains, so it is opt-in. */
+  captureConsole?: boolean;
+
   /** Drop a fraction of events. 1.0 keeps everything. */
   sampleRate?: number;
 

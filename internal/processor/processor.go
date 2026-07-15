@@ -11,15 +11,18 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/ebnsina/sabab-api/internal/event"
 	"github.com/ebnsina/sabab-api/internal/grouping"
 	"github.com/ebnsina/sabab-api/internal/ingest"
 	"github.com/ebnsina/sabab-api/internal/queue"
 	"github.com/ebnsina/sabab-api/internal/store/clickhouse"
 )
 
-// EventWriter is the event-plane half.
+// EventWriter is the event-plane half. One interface per signal table; each new
+// signal type (spans in M3, metrics in M4) adds a method and a batch here.
 type EventWriter interface {
 	InsertErrors(ctx context.Context, rows []clickhouse.ErrorRow) error
+	InsertLogs(ctx context.Context, rows []clickhouse.LogRow) error
 }
 
 // Options tune the worker loop.
@@ -119,15 +122,21 @@ func (p *Processor) Run(ctx context.Context) error {
 	}
 }
 
-// handle processes a batch: every message is turned into a row, the rows are
-// written in one ClickHouse batch, and only then is anything acked.
+// handle processes a batch. Each message is routed by signal type to its row
+// batch, each batch is written to its own table, and a message is acked only
+// after ITS table's write succeeds — so a failed error-write does not throw away
+// logs that were written fine, and vice versa.
 func (p *Processor) handle(ctx context.Context, messages []queue.Message) {
-	rows := make([]clickhouse.ErrorRow, 0, len(messages))
-	// ackable are messages that are done with — successfully processed, or
-	// permanently undeliverable. Both must be acked, or they come back forever.
-	ackable := make([]string, 0, len(messages))
-	// signals are the alerts to raise, held until the write below succeeds.
-	var signals []ingest.AlertSignal
+	var (
+		errorRows []clickhouse.ErrorRow
+		errorAck  []string // acked only if InsertErrors succeeds
+		logRows   []clickhouse.LogRow
+		logAck    []string // acked only if InsertLogs succeeds
+		// doneAck are messages finished regardless of any write — poison,
+		// undecodable, or a signal we do not ingest yet. Always safe to ack.
+		doneAck []string
+		signals []ingest.AlertSignal
+	)
 
 	var newIssues, regressions int
 
@@ -139,7 +148,7 @@ func (p *Processor) handle(ctx context.Context, messages []queue.Message) {
 			p.log.Error("parking poison message",
 				slog.String("id", msg.ID),
 				slog.Int64("deliveries", msg.Deliveries))
-			ackable = append(ackable, msg.ID)
+			doneAck = append(doneAck, msg.ID)
 			continue
 		}
 
@@ -147,64 +156,80 @@ func (p *Processor) handle(ctx context.Context, messages []queue.Message) {
 		if err != nil {
 			// Undecodable: it can never succeed, so retrying is pointless.
 			p.log.Error("dropping undecodable job", slog.String("id", msg.ID), slog.Any("error", err))
-			ackable = append(ackable, msg.ID)
+			doneAck = append(doneAck, msg.ID)
 			continue
 		}
 
-		processed, err := p.pipeline.Process(ctx, job)
-		switch {
-		case errors.Is(err, errUnsupportedKind):
-			// A signal we model but do not ingest yet. Expected, not an error.
+		switch job.Type {
+		case event.KindError:
+			processed, err := p.pipeline.Process(ctx, job)
+			if err != nil {
+				p.recordProcessFailure(msg, job, err, &doneAck)
+				continue
+			}
+			errorRows = append(errorRows, processed.Row)
+			errorAck = append(errorAck, msg.ID)
+
+			// Collect alert signals but do NOT publish them yet: an alert must
+			// only fire for an event we actually persisted.
+			if processed.New {
+				newIssues++
+				signals = append(signals, alertFor(ingest.AlertNewIssue, job, processed))
+			}
+			if processed.Regressed {
+				regressions++
+				p.log.Info("issue regressed",
+					slog.Uint64("issue_id", processed.IssueID),
+					slog.Uint64("project_id", job.ProjectID))
+				signals = append(signals, alertFor(ingest.AlertRegression, job, processed))
+			}
+
+		case event.KindLog:
+			row, err := p.pipeline.ProcessLog(ctx, job)
+			if err != nil {
+				p.recordProcessFailure(msg, job, err, &doneAck)
+				continue
+			}
+			logRows = append(logRows, row)
+			logAck = append(logAck, msg.ID)
+
+		default:
+			// A signal we model but do not ingest yet (spans, metrics, sessions).
+			// Expected, not an error — ack and move on.
 			p.log.Debug("skipping signal", slog.String("type", string(job.Type)))
-			ackable = append(ackable, msg.ID)
-			continue
-		case err != nil:
-			// Could be transient (Postgres blipped) — leave it unacked so it is
-			// redelivered, and let MaxDeliveries stop it if it is not.
-			p.log.Error("processing failed",
-				slog.String("id", msg.ID),
-				slog.Uint64("project_id", job.ProjectID),
-				slog.Any("error", err))
-			continue
-		}
-
-		rows = append(rows, processed.Row)
-		ackable = append(ackable, msg.ID)
-
-		// Collect alert signals but do NOT publish them yet: an alert must only
-		// fire for an event we actually persisted, so publishing waits until the
-		// ClickHouse write below succeeds.
-		if processed.New {
-			newIssues++
-			signals = append(signals, alertFor(ingest.AlertNewIssue, job, processed))
-		}
-		if processed.Regressed {
-			regressions++
-			p.log.Info("issue regressed",
-				slog.Uint64("issue_id", processed.IssueID),
-				slog.Uint64("project_id", job.ProjectID))
-			signals = append(signals, alertFor(ingest.AlertRegression, job, processed))
+			doneAck = append(doneAck, msg.ID)
 		}
 	}
 
-	if len(rows) > 0 {
-		if err := p.events.InsertErrors(ctx, rows); err != nil {
-			// The write failed, so we must NOT ack: the messages have to come
-			// back. Acking here would report success for events that are
-			// nowhere — the silent data loss that destroys trust permanently.
-			p.log.Error("write failed, leaving batch unacked for redelivery",
-				slog.Int("rows", len(rows)), slog.Any("error", err))
-			return
+	ackable := doneAck
+
+	if len(errorRows) > 0 {
+		if err := p.events.InsertErrors(ctx, errorRows); err != nil {
+			// The write failed, so we must NOT ack these: they have to come back.
+			// Acking would report success for events that are nowhere — the
+			// silent data loss that destroys trust permanently.
+			p.log.Error("error write failed, leaving batch unacked",
+				slog.Int("rows", len(errorRows)), slog.Any("error", err))
+		} else {
+			ackable = append(ackable, errorAck...)
+			// Only now that the events are durable, raise their alerts. Publishing
+			// is best-effort: a missed notification beats a re-written event.
+			p.publishAlerts(ctx, signals)
 		}
 	}
 
-	// Now that the events are durably written, raise their alert signals. This
-	// is best-effort: the events are safe, and failing the batch because an
-	// alert could not be enqueued would redeliver and re-write them, trading a
-	// missed notification for a duplicate event. A missed notification is the
-	// lesser harm.
-	p.publishAlerts(ctx, signals)
+	if len(logRows) > 0 {
+		if err := p.events.InsertLogs(ctx, logRows); err != nil {
+			p.log.Error("log write failed, leaving batch unacked",
+				slog.Int("rows", len(logRows)), slog.Any("error", err))
+		} else {
+			ackable = append(ackable, logAck...)
+		}
+	}
 
+	if len(ackable) == 0 {
+		return
+	}
 	if err := p.queue.Ack(ctx, ackable...); err != nil {
 		// The rows are written but the ack failed. They will be redelivered and
 		// written again — a duplicate row, not a lost event. Given the choice,
@@ -215,9 +240,25 @@ func (p *Processor) handle(ctx context.Context, messages []queue.Message) {
 	}
 
 	p.log.Debug("batch processed",
-		slog.Int("rows", len(rows)),
+		slog.Int("error_rows", len(errorRows)),
+		slog.Int("log_rows", len(logRows)),
 		slog.Int("new_issues", newIssues),
 		slog.Int("regressions", regressions))
+}
+
+// recordProcessFailure classifies a pipeline error. An unsupported kind is an
+// expected skip (ack it); anything else may be transient, so it is left unacked
+// for redelivery and MaxDeliveries is the backstop.
+func (p *Processor) recordProcessFailure(msg queue.Message, job ingest.Job, err error, doneAck *[]string) {
+	if errors.Is(err, errUnsupportedKind) {
+		p.log.Debug("skipping signal", slog.String("type", string(job.Type)))
+		*doneAck = append(*doneAck, msg.ID)
+		return
+	}
+	p.log.Error("processing failed",
+		slog.String("id", msg.ID),
+		slog.Uint64("project_id", job.ProjectID),
+		slog.Any("error", err))
 }
 
 // alertFor builds an alert signal from a processed event, carrying everything

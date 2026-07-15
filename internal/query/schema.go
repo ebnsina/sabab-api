@@ -21,6 +21,9 @@ const (
 	// KindMap addresses a ClickHouse Map column: "tenant:acme" becomes
 	// tags['tenant'] = 'acme'.
 	KindMap
+	// KindSeverity maps a log level name to its numeric OTel severity, so
+	// "severity:>=warn" compiles to a numeric range scan against the Enum8.
+	KindSeverity
 )
 
 // Field is one queryable column.
@@ -75,6 +78,30 @@ var Errors = Schema{
 	},
 	FreeTextColumns: []string{"exception_value", "culprit"},
 	CatchAll:        "tags",
+}
+
+// Logs is the schema for the logs table.
+//
+// severity is a KindNumber field even though the column is an Enum8: ClickHouse
+// compares an Enum8 to an integer by its numeric value, which is exactly what
+// makes "severity:>=warn" — really severity >= 13 — a range scan. The compiler
+// maps the level name to its number below.
+var Logs = Schema{
+	Table: "logs",
+	Fields: map[string]Field{
+		"severity":    {Column: "severity", Kind: KindSeverity},
+		"level":       {Column: "severity", Kind: KindSeverity}, // a friendlier alias
+		"service":     {Column: "service", Kind: KindString},
+		"environment": {Column: "environment", Kind: KindString},
+		"release":     {Column: "release", Kind: KindString},
+		"body":        {Column: "body", Kind: KindString},
+		"template":    {Column: "template", Kind: KindString},
+		"trace":       {Column: "trace_id", Kind: KindString},
+		"timestamp":   {Column: "timestamp", Kind: KindTime},
+		"attributes":  {Column: "attributes", Kind: KindMap},
+	},
+	FreeTextColumns: []string{"body"},
+	CatchAll:        "attributes",
 }
 
 // Lookup resolves a field name, routing anything unknown to the catch-all map.

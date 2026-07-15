@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Client } from "./client.js";
 import { parseDsn } from "./dsn.js";
+import { patchConsole } from "./logger.js";
 import { exceptionsFromUnknown, parseStack } from "./stack.js";
 import type { ErrorEvent, SababOptions } from "./types.js";
 
@@ -280,4 +281,64 @@ describe("client", () => {
     // an SDK turns a busy server into a dead one.
     expect(sent).toHaveLength(0);
   });
+});
+
+describe("logging", () => {
+	it("captures a structured log with trace context", async () => {
+		const { client, sent } = testClient();
+
+		client.setTrace("6fa459ea-ee8a-3ca4-894e-db77e160355e");
+		client.logger.info("checkout started", { cartSize: 3 });
+		await client.flush();
+
+		const items = itemsIn(sent[0]!);
+		const log = items.find((i) => i.type === "log");
+		expect(log).toBeDefined();
+		const p = log!.payload as {
+			severity: string;
+			body: string;
+			trace_id?: string;
+			attributes?: Record<string, string>;
+		};
+		expect(p.severity).toBe("info");
+		expect(p.body).toBe("checkout started");
+		// The trace context must ride along, so "logs in this trace" works.
+		expect(p.trace_id).toBe("6fa459ea-ee8a-3ca4-894e-db77e160355e");
+		// Attribute values are coerced to strings, since the column is a string map.
+		expect(p.attributes?.cartSize).toBe("3");
+	});
+
+	it("carries errors and logs in one envelope, so a crash and its logs correlate", async () => {
+		const { client, sent } = testClient();
+
+		client.logger.info("about to render");
+		client.captureException(new Error("boom"));
+		await client.flush();
+
+		const items = itemsIn(sent[0]!);
+		expect(items.some((i) => i.type === "log")).toBe(true);
+		expect(items.some((i) => i.type === "error")).toBe(true);
+	});
+
+	it("console capture forwards to the sink without suppressing the console", async () => {
+		const { client, sent } = testClient();
+		const fakeConsole: Record<string, (...a: unknown[]) => void> = {};
+		let originalCalled = false;
+		fakeConsole.warn = () => {
+			originalCalled = true;
+		};
+
+		const restore = patchConsole(fakeConsole, (r) => client.logger[r.severity](r.body));
+		fakeConsole.warn("disk almost full");
+		restore();
+
+		// The app's own console must still run.
+		expect(originalCalled).toBe(true);
+
+		await client.flush();
+		const log = itemsIn(sent[0]!).find((i) => i.type === "log");
+		const p = log!.payload as { severity: string; body: string };
+		expect(p.severity).toBe("warn");
+		expect(p.body).toBe("disk almost full");
+	});
 });
