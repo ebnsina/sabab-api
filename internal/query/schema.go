@@ -104,6 +104,31 @@ var Logs = Schema{
 	CatchAll:        "attributes",
 }
 
+// Spans is the schema for the spans table. duration is a KindDuration field, so
+// "duration:>500ms" is parsed to nanoseconds and compared against duration_ns.
+var Spans = Schema{
+	Table: "spans",
+	Fields: map[string]Field{
+		"op":          {Column: "op", Kind: KindString},
+		"name":        {Column: "name", Kind: KindString},
+		"service":     {Column: "service", Kind: KindString},
+		"status":      {Column: "status", Kind: KindString},
+		"duration":    {Column: "duration_ns", Kind: KindDuration},
+		"environment": {Column: "environment", Kind: KindString},
+		"release":     {Column: "release", Kind: KindString},
+		"trace":       {Column: "trace_id", Kind: KindString},
+		"http.method": {Column: "http_method", Kind: KindString},
+		"http.status": {Column: "http_status", Kind: KindNumber},
+		"http.route":  {Column: "http_route", Kind: KindString},
+		"db":          {Column: "db_system", Kind: KindString},
+		"user.id":     {Column: "user_id", Kind: KindString},
+		"timestamp":   {Column: "timestamp", Kind: KindTime},
+		"tags":        {Column: "tags", Kind: KindMap},
+	},
+	FreeTextColumns: []string{"name", "http_route"},
+	CatchAll:        "tags",
+}
+
 // Lookup resolves a field name, routing anything unknown to the catch-all map.
 func (s Schema) Lookup(name string) (Field, string, error) {
 	name = strings.TrimSpace(name)
