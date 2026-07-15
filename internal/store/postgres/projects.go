@@ -129,6 +129,23 @@ func (db *DB) IngestKeysForProject(ctx context.Context, projectID uint64) ([]Ing
 	return out, rows.Err()
 }
 
+// RevokeIngestKey revokes one of a project's keys. It only touches a live key
+// scoped to the project, so a key cannot be revoked out from under another
+// project by guessing. Returns ErrNotFound if no live key matched.
+func (db *DB) RevokeIngestKey(ctx context.Context, projectID uint64, publicKey string) error {
+	tag, err := db.Exec(ctx,
+		`UPDATE ingest_keys SET revoked_at = now()
+		 WHERE project_id = $1 AND public_key = $2 AND revoked_at IS NULL`,
+		projectID, publicKey)
+	if err != nil {
+		return fmt.Errorf("revoke ingest key: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // ProjectsForUser lists the projects a user can see, through their org
 // memberships. It is the list the dashboard's project switcher shows, and it is
 // scoped by membership rather than filtered client-side for the obvious reason.

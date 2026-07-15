@@ -57,6 +57,8 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects", a.authenticated(a.handleListProjects))
 	mux.HandleFunc("POST /api/v1/projects", a.authenticated(a.handleCreateProject))
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/keys", a.authenticated(a.handleProjectKeys))
+	mux.HandleFunc("POST /api/v1/projects/{project_id}/keys", a.authenticated(a.handleCreateKey))
+	mux.HandleFunc("DELETE /api/v1/projects/{project_id}/keys/{key}", a.authenticated(a.handleRevokeKey))
 
 	// Issues. The stream and its filters.
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/issues", a.authenticated(a.handleListIssues))

@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/ebnsina/sabab-api/internal/auth"
 	"github.com/ebnsina/sabab-api/internal/httpx"
+	"github.com/ebnsina/sabab-api/internal/store/postgres"
 )
 
 type createProjectRequest struct {
@@ -131,6 +133,82 @@ func (a *API) handleProjectKeys(w http.ResponseWriter, r *http.Request, user aut
 		})
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"keys": out})
+}
+
+type createKeyRequest struct {
+	Label string `json:"label"`
+}
+
+// handleCreateKey mints an additional ingest key for a project — the "add a key"
+// half of key rotation: create the new one, move traffic to it, then revoke the
+// old.
+func (a *API) handleCreateKey(w http.ResponseWriter, r *http.Request, user auth.User) {
+	projectID, err := pathUint(r, "project_id")
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	if err := a.authorizeProject(r.Context(), user, projectID); err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+
+	var req createKeyRequest
+	_ = decode(r, &req) // label is optional; an empty body is fine
+	label := strings.TrimSpace(req.Label)
+	if label == "" {
+		label = "default"
+	}
+
+	key, err := auth.NewIngestKey()
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	if err := a.pg.CreateIngestKey(r.Context(), projectID, key, label); err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
+		"key": keyResponse{PublicKey: key, Label: label, CreatedAt: time.Now().UTC(), DSN: a.buildDSN(key, projectID)},
+	})
+}
+
+// handleRevokeKey revokes a key. It refuses to revoke a project's only live key —
+// that would leave it unable to receive data with no obvious way to recover — so
+// the caller must add a replacement first.
+func (a *API) handleRevokeKey(w http.ResponseWriter, r *http.Request, user auth.User) {
+	ctx := r.Context()
+	projectID, err := pathUint(r, "project_id")
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	if err := a.authorizeProject(ctx, user, projectID); err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+
+	keys, err := a.pg.IngestKeysForProject(ctx, projectID)
+	if err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	if len(keys) <= 1 {
+		httpx.WriteError(w, r, a.log, httpx.NewError(http.StatusBadRequest, "last_key",
+			"Add another key before revoking this one — a project needs at least one."))
+		return
+	}
+
+	if err := a.pg.RevokeIngestKey(ctx, projectID, r.PathValue("key")); err != nil {
+		if errors.Is(err, postgres.ErrNotFound) {
+			httpx.WriteError(w, r, a.log, httpx.ErrNotFound)
+			return
+		}
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // buildDSN turns the ingest URL and a public key into the DSN the SDK parses:
