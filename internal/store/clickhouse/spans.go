@@ -171,30 +171,48 @@ type TraceSummary struct {
 
 // SearchSegments returns matching segment (root) spans — one per trace — so a
 // trace search lists traces, not the thousands of child spans within them.
-func (db *DB) SearchSegments(ctx context.Context, sql query.SQL, limit int) ([]TraceSummary, error) {
+// SearchSegments returns one page of traces (segment/root spans, one per trace),
+// newest first. The keyset uses (timestamp, trace_id) — trace_id is unique per
+// segment row — so paging is stable across microsecond ties. before is nil for
+// the first page.
+func (db *DB) SearchSegments(ctx context.Context, sql query.SQL, limit int, before *time.Time, beforeID uuid.UUID) (out []TraceSummary, hasMore bool, err error) {
+	n := min(max(limit, 1), 200)
+
+	where := sql.Where + " AND is_segment = true"
+	args := append([]any{}, sql.Args...)
+	if before != nil {
+		where += " AND (timestamp, trace_id) < (?, ?)"
+		args = append(args, *before, beforeID)
+	}
+
 	q := fmt.Sprintf(`
 		SELECT trace_id, name, op, service, timestamp, duration_ns, status, http_status
 		FROM spans
-		WHERE %s AND is_segment = true
-		ORDER BY timestamp DESC
-		LIMIT %d`, sql.Where, min(max(limit, 1), 200))
+		WHERE %s
+		ORDER BY timestamp DESC, trace_id DESC
+		LIMIT %d`, where, n+1)
 
-	rows, err := db.Query(ctx, q, sql.Args...)
+	rows, err := db.Query(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("search segments: %w", err)
+		return nil, false, fmt.Errorf("search segments: %w", err)
 	}
 	defer rows.Close()
 
-	var out []TraceSummary
 	for rows.Next() {
 		var t TraceSummary
 		if err := rows.Scan(&t.TraceID, &t.Name, &t.Op, &t.Service, &t.Timestamp,
 			&t.DurationNS, &t.Status, &t.HTTPStatus); err != nil {
-			return nil, fmt.Errorf("scan trace summary: %w", err)
+			return nil, false, fmt.Errorf("scan trace summary: %w", err)
 		}
 		out = append(out, t)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(out) > n {
+		return out[:n], true, nil
+	}
+	return out, false, nil
 }
 
 func nonNilStrMap(m map[string]string) map[string]string {

@@ -97,13 +97,33 @@ const selectLog = `
 // The DSL compiler produces the WHERE clause; this only frames it with ordering
 // and a bounded limit. Newest-first because a log view is read top-down from the
 // most recent — the opposite of the SDK's send order.
-func (db *DB) SearchLogs(ctx context.Context, sql query.SQL, limit int) ([]LogEntry, error) {
+// SearchLogs returns one page of logs, newest first. `before` is the keyset
+// cursor — nil for the first page, else the timestamp of the last row seen, so
+// the next page starts strictly older than it. It fetches one extra row to tell
+// the caller whether a further page exists; hasMore is that answer.
+func (db *DB) SearchLogs(ctx context.Context, sql query.SQL, limit int, before *time.Time) (logs []LogEntry, hasMore bool, err error) {
+	n := min(max(limit, 1), 500)
+
+	where := sql.Where
+	args := append([]any{}, sql.Args...) // copy: never mutate the caller's args
+	if before != nil {
+		where += " AND timestamp < ?"
+		args = append(args, *before)
+	}
+
 	q := fmt.Sprintf(selectLog+`
 		WHERE %s
 		ORDER BY timestamp DESC
-		LIMIT %d`, sql.Where, min(max(limit, 1), 500))
+		LIMIT %d`, where, n+1)
 
-	return db.scanLogs(ctx, q, sql.Args...)
+	logs, err = db.scanLogs(ctx, q, args...)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(logs) > n {
+		return logs[:n], true, nil
+	}
+	return logs, false, nil
 }
 
 // LogsForTrace returns every log emitted inside a trace, oldest first.

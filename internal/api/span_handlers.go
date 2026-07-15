@@ -2,8 +2,10 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/ebnsina/sabab-api/internal/auth"
+	"github.com/ebnsina/sabab-api/internal/cursor"
 	"github.com/ebnsina/sabab-api/internal/httpx"
 	"github.com/ebnsina/sabab-api/internal/query"
 	"github.com/google/uuid"
@@ -71,12 +73,28 @@ func (a *API) handleSearchSpans(w http.ResponseWriter, r *http.Request, user aut
 		return
 	}
 
+	var cur timeUUIDCursor
+	if err := decodeCursor(r, &cur); err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	var before *time.Time
+	if !cur.T.IsZero() {
+		before = &cur.T
+	}
+
 	// Only segment (root) spans are listed: one row per trace, so the search
 	// results are traces, not the thousands of child spans inside them.
-	spans, err := a.ch.SearchSegments(ctx, sql, intParam(r, "limit", 50))
+	spans, hasMore, err := a.ch.SearchSegments(ctx, sql, intParam(r, "limit", 50), before, cur.ID)
 	if err != nil {
 		httpx.WriteError(w, r, a.log, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"traces": spans})
+
+	next := ""
+	if hasMore && len(spans) > 0 {
+		last := spans[len(spans)-1]
+		next, _ = cursor.Encode(timeUUIDCursor{T: last.Timestamp, ID: last.TraceID})
+	}
+	httpx.WriteJSON(w, http.StatusOK, paginated("traces", spans, next))
 }

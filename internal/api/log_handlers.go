@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ebnsina/sabab-api/internal/auth"
+	"github.com/ebnsina/sabab-api/internal/cursor"
 	"github.com/ebnsina/sabab-api/internal/httpx"
 	"github.com/ebnsina/sabab-api/internal/query"
 	"github.com/ebnsina/sabab-api/internal/store/clickhouse"
@@ -35,12 +36,27 @@ func (a *API) handleSearchLogs(w http.ResponseWriter, r *http.Request, user auth
 		return
 	}
 
-	logs, err := a.ch.SearchLogs(ctx, sql, intParam(r, "limit", 100))
+	var cur timeCursor
+	if err := decodeCursor(r, &cur); err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	var before *time.Time
+	if !cur.T.IsZero() {
+		before = &cur.T
+	}
+
+	logs, hasMore, err := a.ch.SearchLogs(ctx, sql, intParam(r, "limit", 100), before)
 	if err != nil {
 		httpx.WriteError(w, r, a.log, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"logs": logs})
+
+	next := ""
+	if hasMore && len(logs) > 0 {
+		next, _ = cursor.Encode(timeCursor{T: logs[len(logs)-1].Timestamp})
+	}
+	httpx.WriteJSON(w, http.StatusOK, paginated("logs", logs, next))
 }
 
 // handleTraceLogs returns the logs emitted inside a trace — the jump from an

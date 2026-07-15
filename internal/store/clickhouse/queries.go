@@ -187,27 +187,45 @@ func (db *DB) LatestEvent(ctx context.Context, projectID, groupHash uint64) (Eve
 }
 
 // SearchEvents returns matching events, newest first.
-func (db *DB) SearchEvents(ctx context.Context, sql query.SQL, limit int) ([]Event, error) {
+// SearchEvents returns one page of events, newest first. Millisecond timestamps
+// tie often at volume, so the keyset uses (timestamp, event_id) — event_id being
+// a unique random UUID — to page without skipping or repeating a row on a tie.
+// before is nil for the first page.
+func (db *DB) SearchEvents(ctx context.Context, sql query.SQL, limit int, before *time.Time, beforeID uuid.UUID) (events []Event, hasMore bool, err error) {
+	n := min(max(limit, 1), 200)
+
+	where := sql.Where
+	args := append([]any{}, sql.Args...)
+	if before != nil {
+		where += " AND (timestamp, event_id) < (?, ?)"
+		args = append(args, *before, beforeID)
+	}
+
 	q := fmt.Sprintf(selectEvent+`
 		WHERE %s
-		ORDER BY timestamp DESC
-		LIMIT %d`, sql.Where, min(max(limit, 1), 200))
+		ORDER BY timestamp DESC, event_id DESC
+		LIMIT %d`, where, n+1)
 
-	rows, err := db.Query(ctx, q, sql.Args...)
+	rows, err := db.Query(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("search events: %w", err)
+		return nil, false, fmt.Errorf("search events: %w", err)
 	}
 	defer rows.Close()
 
-	var events []Event
 	for rows.Next() {
 		e, err := scanEvent(rows)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		events = append(events, e)
 	}
-	return events, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(events) > n {
+		return events[:n], true, nil
+	}
+	return events, false, nil
 }
 
 // rowScanner is satisfied by driver.Rows.

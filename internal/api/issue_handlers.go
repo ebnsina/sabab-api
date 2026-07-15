@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ebnsina/sabab-api/internal/auth"
+	"github.com/ebnsina/sabab-api/internal/cursor"
 	"github.com/ebnsina/sabab-api/internal/grouping"
 	"github.com/ebnsina/sabab-api/internal/httpx"
 	"github.com/ebnsina/sabab-api/internal/query"
@@ -44,12 +46,26 @@ func (a *API) handleListIssues(w http.ResponseWriter, r *http.Request, user auth
 
 	from, to := timeRange(r)
 
+	sort := r.URL.Query().Get("sort")
 	filter := postgres.IssueFilter{
 		ProjectID: projectID,
 		Status:    r.URL.Query().Get("status"),
-		Sort:      r.URL.Query().Get("sort"),
+		Sort:      sort,
 		Limit:     intParam(r, "limit", 50),
-		Offset:    intParam(r, "offset", 0),
+	}
+
+	var ic issueCursor
+	if err := decodeCursor(r, &ic); err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	if len(ic.V) > 0 {
+		val, err := parseIssueCursorVal(sort, ic.V)
+		if err != nil {
+			httpx.WriteError(w, r, a.log, httpx.NewError(http.StatusBadRequest, "bad_cursor", "The pagination cursor is invalid."))
+			return
+		}
+		filter.Cursor = &postgres.IssueCursor{Val: val, ID: ic.ID}
 	}
 
 	// The search DSL runs against ClickHouse, because the fields people search on
@@ -66,7 +82,7 @@ func (a *API) handleListIssues(w http.ResponseWriter, r *http.Request, user auth
 		filter.GroupHashes = hashes
 	}
 
-	issues, err := a.pg.ListIssues(ctx, filter)
+	issues, hasMore, err := a.pg.ListIssues(ctx, filter)
 	if err != nil {
 		httpx.WriteError(w, r, a.log, err)
 		return
@@ -78,7 +94,54 @@ func (a *API) handleListIssues(w http.ResponseWriter, r *http.Request, user auth
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"issues": out})
+	next := ""
+	if hasMore && len(issues) > 0 {
+		last := issues[len(issues)-1]
+		v, _ := json.Marshal(issueSortValue(sort, last))
+		next, _ = cursor.Encode(issueCursor{V: v, ID: last.ID})
+	}
+	httpx.WriteJSON(w, http.StatusOK, paginated("issues", out, next))
+}
+
+// issueCursor is the wire form of the issue keyset cursor: the sort value as raw
+// JSON (its type depends on the sort) plus the row id.
+type issueCursor struct {
+	V  json.RawMessage `json:"v"`
+	ID uint64          `json:"id"`
+}
+
+// parseIssueCursorVal reads the cursor's sort value as the type the chosen sort
+// column holds — a count for the count sorts, a time otherwise.
+func parseIssueCursorVal(sort string, raw json.RawMessage) (any, error) {
+	switch sort {
+	case "times_seen", "frequency", "users":
+		var n uint64
+		if err := json.Unmarshal(raw, &n); err != nil {
+			return nil, err
+		}
+		return n, nil
+	default:
+		var t time.Time
+		if err := json.Unmarshal(raw, &t); err != nil {
+			return nil, err
+		}
+		return t, nil
+	}
+}
+
+// issueSortValue is the value of an issue's sort column — what the next cursor
+// carries.
+func issueSortValue(sort string, i postgres.Issue) any {
+	switch sort {
+	case "times_seen", "frequency":
+		return i.TimesSeen
+	case "users":
+		return i.UsersAffected
+	case "first_seen":
+		return i.FirstSeen
+	default:
+		return i.LastSeen
+	}
 }
 
 // searchGroups compiles the DSL and asks ClickHouse which groups match.
@@ -298,12 +361,28 @@ func (a *API) handleSearchEvents(w http.ResponseWriter, r *http.Request, user au
 		return
 	}
 
-	events, err := a.ch.SearchEvents(ctx, sql, intParam(r, "limit", 50))
+	var cur timeUUIDCursor
+	if err := decodeCursor(r, &cur); err != nil {
+		httpx.WriteError(w, r, a.log, err)
+		return
+	}
+	var before *time.Time
+	if !cur.T.IsZero() {
+		before = &cur.T
+	}
+
+	events, hasMore, err := a.ch.SearchEvents(ctx, sql, intParam(r, "limit", 50), before, cur.ID)
 	if err != nil {
 		httpx.WriteError(w, r, a.log, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"events": events})
+
+	next := ""
+	if hasMore && len(events) > 0 {
+		last := events[len(events)-1]
+		next, _ = cursor.Encode(timeUUIDCursor{T: last.Timestamp, ID: last.EventID})
+	}
+	httpx.WriteJSON(w, http.StatusOK, paginated("events", events, next))
 }
 
 func (a *API) handleListProjects(w http.ResponseWriter, r *http.Request, user auth.User) {

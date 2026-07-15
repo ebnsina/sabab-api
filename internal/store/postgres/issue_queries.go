@@ -41,36 +41,33 @@ type IssueFilter struct {
 	GroupHashes []string
 	Sort        string // last_seen | first_seen | times_seen | users
 	Limit       int
-	Offset      int
+	Cursor      *IssueCursor
+}
+
+// IssueCursor is a keyset cursor over the issue list: the sort-column value and
+// id of the last row on the previous page. Val is a time.Time for the time sorts
+// and a uint64 for the count sorts — whatever the chosen column holds.
+type IssueCursor struct {
+	Val any
+	ID  uint64
 }
 
 // ListIssues returns a page of the issue stream.
-func (db *DB) ListIssues(ctx context.Context, f IssueFilter) ([]Issue, error) {
+func (db *DB) ListIssues(ctx context.Context, f IssueFilter) (issues []Issue, hasMore bool, err error) {
 	// The sort column is chosen from a fixed set, never taken from user input:
-	// it cannot be a bound parameter, so an allowlist is the only safe way.
-	orderBy := "last_seen DESC"
+	// it cannot be a bound parameter, so an allowlist is the only safe way. The
+	// bare column (not "col DESC") is needed so the keyset can reference it.
+	sortCol := "last_seen"
 	switch f.Sort {
 	case "first_seen":
-		orderBy = "first_seen DESC"
+		sortCol = "first_seen"
 	case "times_seen", "frequency":
-		orderBy = "times_seen DESC"
+		sortCol = "times_seen"
 	case "users":
-		orderBy = "users_affected DESC"
+		sortCol = "users_affected"
 	}
 
-	limit := min(max(f.Limit, 1), 100)
-
-	query := fmt.Sprintf(`
-		SELECT id, project_id, group_hash, title, culprit, level, status,
-		       first_seen, last_seen, times_seen, users_affected,
-		       COALESCE(first_release, ''), COALESCE(resolved_in_release, ''),
-		       assignee_id, snooze_until
-		FROM issues
-		WHERE project_id = $1
-		  AND ($2 = '' OR status = $2)
-		  AND ($3::text[] IS NULL OR group_hash = ANY($3))
-		ORDER BY %s
-		LIMIT $4 OFFSET $5`, orderBy)
+	n := min(max(f.Limit, 1), 100)
 
 	// nil stays nil (no filter); an empty slice must stay an empty array so that
 	// "= ANY('{}')" matches nothing.
@@ -79,13 +76,32 @@ func (db *DB) ListIssues(ctx context.Context, f IssueFilter) ([]Issue, error) {
 		hashes = f.GroupHashes
 	}
 
-	rows, err := db.Query(ctx, query, f.ProjectID, f.Status, hashes, limit, max(f.Offset, 0))
+	where := "project_id = $1 AND ($2 = '' OR status = $2) AND ($3::text[] IS NULL OR group_hash = ANY($3))"
+	args := []any{f.ProjectID, f.Status, hashes}
+	if f.Cursor != nil {
+		// (sort, id) < (val, id) is the keyset: id breaks ties on the non-unique
+		// sort column, so no row is skipped or repeated at a page boundary.
+		where += fmt.Sprintf(" AND (%s, id) < ($%d, $%d)", sortCol, len(args)+1, len(args)+2)
+		args = append(args, f.Cursor.Val, f.Cursor.ID)
+	}
+	args = append(args, n+1) // one extra row tells us whether a further page exists
+
+	query := fmt.Sprintf(`
+		SELECT id, project_id, group_hash, title, culprit, level, status,
+		       first_seen, last_seen, times_seen, users_affected,
+		       COALESCE(first_release, ''), COALESCE(resolved_in_release, ''),
+		       assignee_id, snooze_until
+		FROM issues
+		WHERE %s
+		ORDER BY %s DESC, id DESC
+		LIMIT $%d`, where, sortCol, len(args))
+
+	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list issues: %w", err)
+		return nil, false, fmt.Errorf("list issues: %w", err)
 	}
 	defer rows.Close()
 
-	var issues []Issue
 	for rows.Next() {
 		var i Issue
 		if err := rows.Scan(
@@ -93,11 +109,17 @@ func (db *DB) ListIssues(ctx context.Context, f IssueFilter) ([]Issue, error) {
 			&i.FirstSeen, &i.LastSeen, &i.TimesSeen, &i.UsersAffected,
 			&i.FirstRelease, &i.ResolvedInRelease, &i.AssigneeID, &i.SnoozeUntil,
 		); err != nil {
-			return nil, fmt.Errorf("scan issue: %w", err)
+			return nil, false, fmt.Errorf("scan issue: %w", err)
 		}
 		issues = append(issues, i)
 	}
-	return issues, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(issues) > n {
+		return issues[:n], true, nil
+	}
+	return issues, false, nil
 }
 
 // GetIssue returns one issue, including the components that explain its grouping.
