@@ -71,6 +71,10 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/spans", a.authenticated(a.handleSearchSpans))
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/traces/{trace_id}", a.authenticated(a.handleTrace))
 
+	// Metrics.
+	mux.HandleFunc("GET /api/v1/projects/{project_id}/metrics", a.authenticated(a.handleListMetrics))
+	mux.HandleFunc("GET /api/v1/projects/{project_id}/metrics/query", a.authenticated(a.handleQueryMetric))
+
 	// Alert rules.
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/alert-rules", a.authenticated(a.handleListAlertRules))
 	mux.HandleFunc("POST /api/v1/projects/{project_id}/alert-rules", a.authenticated(a.handleCreateAlertRule))

@@ -45,9 +45,24 @@ export interface WireLog extends LogRecord {
   span_id?: string;
 }
 
+/** A metric observation as it goes on the wire. One call = one raw observation;
+ *  the server's rollups aggregate them, so the SDK ships them as-is rather than
+ *  pre-summing. Matches the server's metric payload shape. */
+export interface WireMetric {
+  timestamp: string;
+  name: string;
+  type: "counter" | "gauge" | "distribution" | "set";
+  unit: string;
+  value: number;
+  environment?: string;
+  release?: string;
+  tags?: Record<string, string>;
+}
+
 type Item =
   | { type: "error"; payload: ErrorEvent }
-  | { type: "log"; payload: WireLog };
+  | { type: "log"; payload: WireLog }
+  | { type: "metric"; payload: WireMetric };
 
 /** A queued item's signal category, for the client_report. */
 type Category = Item["type"];

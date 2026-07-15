@@ -1,5 +1,6 @@
 import { parseDsn } from "./dsn.js";
 import { Logger, type LogRecord } from "./logger.js";
+import { Metrics, type MetricRecord } from "./metrics.js";
 import { exceptionsFromUnknown } from "./stack.js";
 import { Transport, type SdkInfo } from "./transport.js";
 import type {
@@ -47,6 +48,13 @@ export class Client {
    */
   readonly logger: Logger;
 
+  /**
+   * The metric capture surface. Each call ships one raw observation, stamped
+   * with environment/release, onto the same queue as errors and logs — so a
+   * latency spike and the error it caused travel together.
+   */
+  readonly metrics: Metrics;
+
   constructor(
     options: SababOptions,
     sdk: SdkInfo,
@@ -62,6 +70,7 @@ export class Client {
       send,
     );
     this.logger = new Logger((record) => this.captureLog(record));
+    this.metrics = new Metrics((record) => this.captureMetric(record));
   }
 
   /** Set the active trace context. The tracing SDK calls this per request; it is
@@ -85,6 +94,20 @@ export class Client {
           release: this.options.release,
           trace_id: this.traceId,
           span_id: this.spanId,
+        },
+      });
+    });
+  }
+
+  /** Ingest one captured metric: stamp environment/release and queue it. */
+  private captureMetric(record: MetricRecord): void {
+    this.guard(() => {
+      this.transport.enqueue({
+        type: "metric",
+        payload: {
+          ...record,
+          environment: this.options.environment ?? "production",
+          release: this.options.release,
         },
       });
     });

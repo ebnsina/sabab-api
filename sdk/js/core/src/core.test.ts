@@ -342,3 +342,75 @@ describe("logging", () => {
 		expect(p.body).toBe("disk almost full");
 	});
 });
+
+describe("metrics", () => {
+	function metricsIn(envelope: string) {
+		return itemsIn(envelope)
+			.filter((i) => i.type === "metric")
+			.map((i) => i.payload as Record<string, unknown>);
+	}
+
+	it("ships one observation per call, stamped with the metric type", async () => {
+		const { client, sent } = testClient({ environment: "prod" });
+		client.metrics.increment("orders.placed", 2, { tags: { route: "/checkout" } });
+		client.metrics.gauge("queue.depth", 7);
+		client.metrics.distribution("payload.size", 1200, { unit: "byte" });
+		await client.flush();
+
+		const metrics = metricsIn(sent[0]!);
+		expect(metrics).toHaveLength(3);
+
+		const counter = metrics.find((m) => m.name === "orders.placed")!;
+		expect(counter.type).toBe("counter");
+		expect(counter.value).toBe(2);
+		expect(counter.tags).toEqual({ route: "/checkout" });
+		// Context the client stamps on, so the server can split by release/env.
+		expect(counter.environment).toBe("prod");
+		expect(counter.release).toBe("web@2.4.1");
+
+		expect(metrics.find((m) => m.name === "queue.depth")!.type).toBe("gauge");
+		const dist = metrics.find((m) => m.name === "payload.size")!;
+		expect(dist.type).toBe("distribution");
+		expect(dist.unit).toBe("byte");
+	});
+
+	it("increment defaults to +1", async () => {
+		const { client, sent } = testClient();
+		client.metrics.increment("hits");
+		await client.flush();
+		expect(metricsIn(sent[0]!)[0]!.value).toBe(1);
+	});
+
+	it("timing records milliseconds as a distribution", async () => {
+		const { client, sent } = testClient();
+		client.metrics.timing("db.query", 42);
+		await client.flush();
+		const m = metricsIn(sent[0]!)[0]!;
+		expect(m.type).toBe("distribution");
+		expect(m.unit).toBe("millisecond");
+		expect(m.value).toBe(42);
+	});
+
+	it("drops a non-finite value rather than poisoning the rollup", async () => {
+		const { client, sent } = testClient();
+		client.metrics.gauge("bad", NaN);
+		client.metrics.gauge("also-bad", Infinity);
+		client.metrics.gauge("good", 3);
+		await client.flush();
+		const metrics = metricsIn(sent[0]!);
+		expect(metrics).toHaveLength(1);
+		expect(metrics[0]!.name).toBe("good");
+	});
+
+	it("startTimer records elapsed time once, even if stopped twice", async () => {
+		const { client, sent } = testClient();
+		const stop = client.metrics.startTimer("op");
+		stop();
+		stop(); // a double-stop must not record a second bogus sample
+		await client.flush();
+		const metrics = metricsIn(sent[0]!);
+		expect(metrics).toHaveLength(1);
+		expect(metrics[0]!.unit).toBe("millisecond");
+		expect(typeof metrics[0]!.value).toBe("number");
+	});
+});

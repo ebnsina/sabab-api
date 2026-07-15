@@ -8,8 +8,15 @@ export {
   type LogSeverity,
   type LogSink,
 } from "./logger.js";
+export {
+  Metrics,
+  type MetricOptions,
+  type MetricRecord,
+  type MetricSink,
+  type MetricType,
+} from "./metrics.js";
 export { exceptionsFromError, exceptionsFromUnknown, parseStack } from "./stack.js";
-export { Transport, type SdkInfo, type WireLog } from "./transport.js";
+export { Transport, type SdkInfo, type WireLog, type WireMetric } from "./transport.js";
 export type {
   Breadcrumb,
   DiscardReason,

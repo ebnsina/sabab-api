@@ -24,6 +24,7 @@ type EventWriter interface {
 	InsertErrors(ctx context.Context, rows []clickhouse.ErrorRow) error
 	InsertLogs(ctx context.Context, rows []clickhouse.LogRow) error
 	InsertSpans(ctx context.Context, rows []clickhouse.SpanRow) error
+	InsertMetrics(ctx context.Context, rows []clickhouse.MetricRow) error
 }
 
 // Options tune the worker loop.
@@ -129,12 +130,14 @@ func (p *Processor) Run(ctx context.Context) error {
 // logs that were written fine, and vice versa.
 func (p *Processor) handle(ctx context.Context, messages []queue.Message) {
 	var (
-		errorRows []clickhouse.ErrorRow
-		errorAck  []string // acked only if InsertErrors succeeds
-		logRows   []clickhouse.LogRow
-		logAck    []string // acked only if InsertLogs succeeds
-		spanRows  []clickhouse.SpanRow
-		spanAck   []string // acked only if InsertSpans succeeds
+		errorRows  []clickhouse.ErrorRow
+		errorAck   []string // acked only if InsertErrors succeeds
+		logRows    []clickhouse.LogRow
+		logAck     []string // acked only if InsertLogs succeeds
+		spanRows   []clickhouse.SpanRow
+		spanAck    []string // acked only if InsertSpans succeeds
+		metricRows []clickhouse.MetricRow
+		metricAck  []string // acked only if InsertMetrics succeeds
 		// doneAck are messages finished regardless of any write — poison,
 		// undecodable, or a signal we do not ingest yet. Always safe to ack.
 		doneAck []string
@@ -205,6 +208,15 @@ func (p *Processor) handle(ctx context.Context, messages []queue.Message) {
 			spanRows = append(spanRows, row)
 			spanAck = append(spanAck, msg.ID)
 
+		case event.KindMetric:
+			row, err := p.pipeline.ProcessMetric(ctx, job)
+			if err != nil {
+				p.recordProcessFailure(msg, job, err, &doneAck)
+				continue
+			}
+			metricRows = append(metricRows, row)
+			metricAck = append(metricAck, msg.ID)
+
 		default:
 			// A signal we model but do not ingest yet (spans, metrics, sessions).
 			// Expected, not an error — ack and move on.
@@ -245,6 +257,15 @@ func (p *Processor) handle(ctx context.Context, messages []queue.Message) {
 				slog.Int("rows", len(spanRows)), slog.Any("error", err))
 		} else {
 			ackable = append(ackable, spanAck...)
+		}
+	}
+
+	if len(metricRows) > 0 {
+		if err := p.events.InsertMetrics(ctx, metricRows); err != nil {
+			p.log.Error("metric write failed, leaving batch unacked",
+				slog.Int("rows", len(metricRows)), slog.Any("error", err))
+		} else {
+			ackable = append(ackable, metricAck...)
 		}
 	}
 

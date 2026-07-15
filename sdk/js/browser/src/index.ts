@@ -2,6 +2,7 @@ import {
   Client,
   patchConsole,
   type Level,
+  type MetricOptions,
   type SababOptions,
 } from "@sabab/core";
 
@@ -93,6 +94,27 @@ export const log = {
   warn: (m: string, a?: Record<string, unknown>) => client?.logger.warn(m, a),
   error: (m: string, a?: Record<string, unknown>) => client?.logger.error(m, a),
   fatal: (m: string, a?: Record<string, unknown>) => client?.logger.fatal(m, a),
+};
+
+/**
+ * Metrics: Sabab.metrics.increment("checkout.completed", 1, { tags: { plan } }).
+ *
+ * Safe to call before init — it no-ops until the SDK is running, so a counter
+ * never throws just because init has not run yet.
+ */
+export const metrics = {
+  increment: (name: string, value?: number, opts?: MetricOptions) =>
+    client?.metrics.increment(name, value, opts),
+  gauge: (name: string, value: number, opts?: MetricOptions) =>
+    client?.metrics.gauge(name, value, opts),
+  distribution: (name: string, value: number, opts?: MetricOptions) =>
+    client?.metrics.distribution(name, value, opts),
+  timing: (name: string, milliseconds: number, opts?: MetricOptions) =>
+    client?.metrics.timing(name, milliseconds, opts),
+  set: (name: string, value: number, opts?: MetricOptions) =>
+    client?.metrics.set(name, value, opts),
+  startTimer: (name: string, opts?: MetricOptions) =>
+    client?.metrics.startTimer(name, opts) ?? (() => {}),
 };
 
 /**
