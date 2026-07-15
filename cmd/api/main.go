@@ -64,7 +64,7 @@ func run(ctx context.Context) error {
 		devOrigin = "http://localhost:5173" // the SvelteKit dev server
 	}
 
-	a := api.New(pg, ch, sessions, checker, devOrigin, log)
+	a := api.New(pg, ch, sessions, checker, devOrigin, cfg.IngestURL, log)
 	go a.SweepSessions(ctx, time.Hour)
 
 	server := &http.Server{

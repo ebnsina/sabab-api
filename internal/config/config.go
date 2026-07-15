@@ -33,6 +33,11 @@ type Config struct {
 	// "view issue" links in alerts. Without it an alert can say what broke but
 	// not take you to it.
 	DashboardURL string
+
+	// IngestURL is the public base URL of the gateway — where an SDK sends. It is
+	// what the setup screen builds a project's DSN from, so a user can copy it
+	// straight into their code.
+	IngestURL string
 }
 
 // Alerter tunes the alert-evaluation service.
@@ -181,6 +186,7 @@ func Load() (*Config, error) {
 	cfg.SMTP.From = env("SABAB_SMTP_FROM", "alerts@sabab.local")
 
 	cfg.DashboardURL = strings.TrimRight(env("SABAB_DASHBOARD_URL", "http://localhost:5173"), "/")
+	cfg.IngestURL = strings.TrimRight(env("SABAB_INGEST_URL", "http://localhost:8090"), "/")
 
 	// Parse errors and validation errors are reported together. Short-circuiting
 	// after the parse pass would hide a bad SABAB_LOG_LEVEL behind an unrelated

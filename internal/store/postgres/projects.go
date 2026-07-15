@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/ebnsina/sabab-api/internal/auth"
 	"github.com/jackc/pgx/v5"
@@ -78,6 +79,39 @@ func (db *DB) CreateIngestKey(ctx context.Context, projectID uint64, publicKey, 
 		return fmt.Errorf("create ingest key: %w", err)
 	}
 	return nil
+}
+
+// IngestKey is one live public key for a project.
+type IngestKey struct {
+	PublicKey string    `json:"public_key"`
+	Label     string    `json:"label"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// IngestKeysForProject returns a project's live (non-revoked) keys, so the setup
+// screen can show the user their DSN.
+func (db *DB) IngestKeysForProject(ctx context.Context, projectID uint64) ([]IngestKey, error) {
+	const query = `
+		SELECT public_key, label, created_at
+		FROM ingest_keys
+		WHERE project_id = $1 AND revoked_at IS NULL
+		ORDER BY created_at`
+
+	rows, err := db.Query(ctx, query, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list ingest keys: %w", err)
+	}
+	defer rows.Close()
+
+	var out []IngestKey
+	for rows.Next() {
+		var k IngestKey
+		if err := rows.Scan(&k.PublicKey, &k.Label, &k.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan ingest key: %w", err)
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
 }
 
 // ProjectsForUser lists the projects a user can see, through their org

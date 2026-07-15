@@ -33,11 +33,14 @@ type API struct {
 	// devOrigin is the SvelteKit dev server, allowed through CORS with
 	// credentials so the dashboard can be developed against a running API.
 	devOrigin string
+	// ingestURL is the gateway's public base URL, used to build a project's DSN
+	// for the setup screen.
+	ingestURL string
 }
 
 // New builds the API.
-func New(pg *postgres.DB, ch *clickhouse.DB, sessions *auth.Sessions, checker *health.Checker, devOrigin string, log *slog.Logger) *API {
-	return &API{pg: pg, ch: ch, sessions: sessions, health: checker, devOrigin: devOrigin, log: log}
+func New(pg *postgres.DB, ch *clickhouse.DB, sessions *auth.Sessions, checker *health.Checker, devOrigin, ingestURL string, log *slog.Logger) *API {
+	return &API{pg: pg, ch: ch, sessions: sessions, health: checker, devOrigin: devOrigin, ingestURL: ingestURL, log: log}
 }
 
 // Handler returns the wired HTTP handler.
@@ -52,6 +55,7 @@ func (a *API) Handler() http.Handler {
 
 	// Projects.
 	mux.HandleFunc("GET /api/v1/projects", a.authenticated(a.handleListProjects))
+	mux.HandleFunc("GET /api/v1/projects/{project_id}/keys", a.authenticated(a.handleProjectKeys))
 
 	// Issues. The stream and its filters.
 	mux.HandleFunc("GET /api/v1/projects/{project_id}/issues", a.authenticated(a.handleListIssues))
