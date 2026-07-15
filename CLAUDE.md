@@ -18,6 +18,13 @@ earn its space.
 - **It must be understandable at a glance.** Severity by colour, counts
   formatted for humans, relative times ("3m ago") over ISO strings. If a
   reasonable engineer has to stop and decode the screen, redesign it.
+- **Plain language, not jargon.** Label things the way a user would say them,
+  not the way the code names them. Avoid unexplained acronyms and internal
+  terms; prefer "Repeated queries" over "N+1", "Error rate" over "failure
+  ratio". If a term genuinely earns its place (Apdex, p95), it must carry its
+  own explanation right there — a one-line caption, a footnote, or hover help —
+  so the screen is self-explanatory without leaving it. A label a user has to
+  look up is a label that failed.
 - Think about the empty state, the loading state, the error state, and the
   "10,000 rows" state — every time, not just the happy path.
 - Design dark-first (see `src/lib/styles/app.css`). Severity→colour lives in one
